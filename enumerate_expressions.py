@@ -16,7 +16,7 @@ class Expression():
 
     @property
     def return_type(self):
-        return self.__class__.return_type    
+        return self.__class__.return_type
 
     def __repr__(self):
         return str(self)
@@ -36,7 +36,7 @@ class Expression():
 class Real(Expression):
     return_type = "real"
     argument_types = []
-    
+
     def __init__(self, name):
         self.name = name
 
@@ -50,11 +50,11 @@ class Real(Expression):
         return environment[self.name]
 #starting
     def arguments(self): return []
-    
+
 class Vector(Expression):
     return_type = "vector"
     argument_types = []
-    
+
     def __init__(self, name):
         self.name = name
 
@@ -72,7 +72,7 @@ class Vector(Expression):
 class Plus(Expression):
     return_type = "real"
     argument_types = ["real","real"]
-    
+
     def __init__(self, x, y):
         self.x, self.y = x, y
 
@@ -92,7 +92,7 @@ class Plus(Expression):
 class Times(Expression):
     return_type = "real"
     argument_types = ["real","real"]
-    
+
     def __init__(self, x, y):
         self.x, self.y = x, y
 
@@ -110,7 +110,7 @@ class Times(Expression):
 class Divide(Expression):
     return_type = "real"
     argument_types = ["real","real"]
-    
+
     def __init__(self, x, y):
         self.x, self.y = x, y
 
@@ -129,7 +129,7 @@ class Divide(Expression):
 class Reciprocal(Expression):
     return_type = "real"
     argument_types = ["real"]
-    
+
     def __init__(self, x):
         self.x = x
 
@@ -146,7 +146,7 @@ class Reciprocal(Expression):
 class Inner(Expression):
     return_type = "real"
     argument_types = ["vector","vector"]
-    
+
     def __init__(self, x, y):
         self.x, self.y = x, y
 
@@ -162,14 +162,14 @@ class Inner(Expression):
         if isinstance(x, np.ndarray):
             return np.sum(x * y, -1)
         return (x * y).sum(-1).unsqueeze(-1)
-    
+
 
     def arguments(self): return [self.x, self.y]
 
 class Cross(Expression):
     return_type = "vector"
     argument_types = ["vector","vector"]
-    
+
     def __init__(self, x, y):
         self.x, self.y = x, y
 
@@ -186,14 +186,14 @@ class Cross(Expression):
             return np.cross(x, y)
         assert False
         return (x * y).sum(-1).unsqueeze(-1)
-    
+
 
     def arguments(self): return [self.x, self.y]
-    
+
 class Outer(Expression):
     return_type = "matrix"
     argument_types = ["vector","vector"]
-    
+
     def __init__(self, x, y):
         self.x, self.y = x, y
 
@@ -216,7 +216,7 @@ class Outer(Expression):
 class Skew(Expression):
     return_type = "matrix"
     argument_types = ["vector"]
-    
+
     def __init__(self, x):
         self.x = x
 
@@ -230,7 +230,7 @@ class Skew(Expression):
         v = self.x.evaluate(environment)
         if isinstance(v, np.ndarray):
             x, y, z = v[0], v[1], v[2]
-            
+
             return np.array([[0, -z, y],
                              [z, 0, -x],
                              [-y, x, 0]])
@@ -243,7 +243,7 @@ class Skew(Expression):
 class Length(Expression):
     return_type = "real"
     argument_types = ["vector"]
-    
+
     def __init__(self, x):
         self.x = x
 
@@ -256,15 +256,15 @@ class Length(Expression):
     def evaluate(self, environment):
         x = self.x.evaluate(environment)
         return np.sum(x * x)**0.5
-        
+
 #starting
     def arguments(self): return [self.x, self.y]
-    
-    
+
+
 class Scale(Expression):
     return_type = "vector"
     argument_types = ["real","vector"]
-    
+
     def __init__(self, x, y):
         self.x, self.y = x, y
 
@@ -278,14 +278,14 @@ class Scale(Expression):
         x = self.x.evaluate(environment)
         y = self.y.evaluate(environment)
         return x * y
-        
+
 #starting
     def arguments(self): return [self.x, self.y]
 
 class ScaleInverse(Expression):
     return_type = "vector"
     argument_types = ["vector", "real"]
-    
+
     def __init__(self, x, y):
         self.x, self.y = x, y
 
@@ -299,14 +299,14 @@ class ScaleInverse(Expression):
         x = self.x.evaluate(environment)
         y = self.y.evaluate(environment)
         return x / y
-        
+
 #starting
     def arguments(self): return [self.x, self.y]
 
 class Hat(Expression):
     return_type = "vector"
     argument_types = ["vector"]
-    
+
     def __init__(self, x):
         self.x = x
 
@@ -324,10 +324,10 @@ class Hat(Expression):
             else: return np.zeros(x.shape)
         else:
             return x/(((x*x).sum(-1)**0.5).unsqueeze(-1))
-    
+
 #starting
     def arguments(self): return [self.x, self.y]
-    
+
 def bottom_up_generator(global_bound, operators, constants, input_outputs):
     """
     global_bound: int. an upper bound on the size of expression
@@ -343,7 +343,7 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
     def make_variable(variable_name, variable_value):
         if isinstance(variable_value, float): return Real(variable_name)
         if isinstance(variable_value, np.ndarray): return Vector(variable_name)
-        
+
     variables = list({make_variable(variable_name, variable_value)
                       for inputs, outputs in input_outputs
                       for variable_name, variable_value in inputs.items() })
@@ -369,7 +369,7 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
         values = tuple(str(v) for v in valuation)
 
         # is this something we have not seen before?
-        if values not in observed_values: 
+        if values not in observed_values:
             observed_values.add(values)
 
             # we have some new behavior
@@ -383,10 +383,10 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
             return True
 
         return False
-            
+
     for terminal in variables_and_constants:
-        if record_new_expression(terminal, 1): yield terminal
-    
+        if record_new_expression(terminal, 1): yield (terminal, 1)
+
     for target_size in range(2, global_bound + 1): # enumerate programs of increasing size
         for operator in operators:
             partitions = integer_partitions(target_size - 1 - len(operator.argument_types),
@@ -398,8 +398,9 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
                 for arguments in itertools.product(*candidate_arguments):
                     new_expression = operator(*[e for e,v in arguments ])
                     if record_new_expression(new_expression, target_size):
-                        yield new_expression
-    return 
+                        # include default cost of 1
+                        yield (new_expression, 1)
+    return
 #ending
     assert False, "implement as part of homework"
 
@@ -435,10 +436,10 @@ basis_cache = {}
 def construct_basis(reals, vectors, size, dimension=3):
     basis_key = (tuple(reals), tuple(vectors), size, dimension)
     if basis_key in basis_cache: return basis_cache[basis_key]
-    
+
     operators = [Hat, Outer, Inner, Divide, Times, Scale, Reciprocal, ScaleInverse, Length]
     if dimension == 3: operators.extend([Skew, Cross])
-    
+
     constants = []
     def random_input():
         d = {}
@@ -447,23 +448,23 @@ def construct_basis(reals, vectors, size, dimension=3):
         for nm in vectors:
             d[nm] = np.random.random(dimension)*10-5
         return d
-    
+
     input_outputs = [(random_input(), None)
                      for _ in range(10) ]
     count = 0
     vector_basis = []
     matrix_basis = []
-    for expression in bottom_up_generator(10, operators, constants, input_outputs):
+    for expression, cost in bottom_up_generator(10, operators, constants, input_outputs):
         if expression.return_type == "vector" and len(vector_basis) < size:
-            vector_basis.append(expression)
+            vector_basis.append((expression, cost))
         if expression.return_type == "matrix" and len(matrix_basis) < size:
-            matrix_basis.append(expression)
-        
+            matrix_basis.append((expression, cost))
+
         if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
     basis_cache[basis_key] = (vector_basis, matrix_basis)
     return basis_cache[basis_key]
-    
+
 if __name__ == '__main__':
     for e in construct_basis([],#"R", "V1","V2"
                              ["R", "V1","V2"],
