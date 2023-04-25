@@ -309,6 +309,7 @@ if __name__ == '__main__':
             ("drag1", simulate_drag1),
             ("drag2", simulate_drag2),
             ("magnet1", simulate_charge_in_uniform_magnetic_field),
+            ("magnet2", simulate_charge_dipole),
 
     ]:
         if arguments.simulation and arguments.simulation != name:
