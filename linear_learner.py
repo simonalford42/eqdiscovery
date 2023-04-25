@@ -6,6 +6,7 @@ from magnet import *
 from animate import animate
 from enumerate_expressions import *
 import numpy as np
+import random
 
 def sparse_regression(X, y, alpha=1e-3, feature_cost=None):
     """short and modular helper function"""
@@ -288,6 +289,9 @@ class AccelerationLearner():
             return self
 
 if __name__ == '__main__':
+    np.random.seed(0)
+    random.seed(0)
+
     import argparse
     parser = argparse.ArgumentParser(description = "")
     parser.add_argument("--simulation", "-s")

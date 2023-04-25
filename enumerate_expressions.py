@@ -1,6 +1,7 @@
 import itertools
 import random
 import numpy as np
+import math
 
 
 class Expression():
@@ -431,6 +432,65 @@ def integer_partitions(target_value, number_of_arguments):
              for x1 in range(target_value + 1)
              for x2s in integer_partitions(target_value - x1, number_of_arguments - 1) ]
 
+
+def pcfg_generator(cost_bound, operators, constants, input_outputs, pcfg: dict[type, float]):
+    """
+    Enumerate programs from a probabilistic context-free grammar (PCFG) that are semantically distinct on the input examples.
+
+    global_bound: int. an upper bound on the size of expression
+    operators: list of classes, such as [Times, If, ...]
+    constants: list of possible leaves in syntax tree
+    input_outputs: list of tuples of environment (the input) and desired output, such as [({'x': 5}, 6), ({'x': 1}, 2)]
+    pcfg: dict mapping Expression subclass to probability of that expression in the PCFG
+    yields: sequence of programs, roughly ordered by expression size and cost, which are semantically distinct on the input examples
+
+    Uses approach from https://dl.acm.org/doi/10.1145/3428295
+    """
+
+    observed_values = set()
+    enumerated_expressions = {}
+    def record_new_expression(expression, cost):
+        """Returns True iff the semantics of this expression has never been seen before"""
+        nonlocal input_outputs, observed_values
+
+        valuation = tuple(expression.evaluate(input) for input, _ in input_outputs)
+        values = tuple(str(v) for v in valuation)
+
+        if values not in observed_values:
+            observed_values.add(values)
+            key = (expression.__class__.return_type, cost)
+
+            if key not in enumerated_expressions:
+                enumerated_expressions[key] = []
+
+            enumerated_expressions[key].append((expression, values))
+            return True
+
+        return False
+
+    cost_dict = {typ: round(-math.log(p)) for typ, p in pcfg.items()}
+
+    for lvl in range(1, cost_bound + 1):
+        for terminal in constants:
+            if cost_dict[type(terminal)] == lvl:
+                if record_new_expression(terminal, lvl):
+                    yield terminal
+
+        for operator in operators:
+            op_cost = cost_dict[operator]
+            if op_cost < lvl:
+                for arg_costs in integer_partitions(lvl - op_cost, len(operator.argument_types)):
+                    candidate_arguments = [enumerated_expressions.get((typ, cost), [])
+                                           for typ, cost in zip(operator.argument_types, arg_costs)]
+
+                    for arguments in itertools.product(*candidate_arguments):
+                        # note: could make use of precomputed evaluation of subtrees when evaluating later
+                        new_expression = operator(*[e for e,v in arguments])
+                        if record_new_expression(new_expression, lvl):
+                            yield new_expression
+    return
+
+
 basis_cache = {}
 def construct_basis(reals, vectors, size, dimension=3):
     basis_key = (tuple(reals), tuple(vectors), size, dimension)
@@ -439,7 +499,6 @@ def construct_basis(reals, vectors, size, dimension=3):
     operators = [Hat, Outer, Inner, Divide, Times, Scale, Reciprocal, ScaleInverse, Length]
     if dimension == 3: operators.extend([Skew, Cross])
 
-    constants = []
     def random_input():
         d = {}
         for nm in reals:
@@ -453,11 +512,24 @@ def construct_basis(reals, vectors, size, dimension=3):
     count = 0
     vector_basis = []
     matrix_basis = []
-    for expression, cost in bottom_up_generator(10, operators, constants, input_outputs):
+
+    def make_variable(variable_name, variable_value):
+        if isinstance(variable_value, float): return Real(variable_name)
+        if isinstance(variable_value, np.ndarray): return Vector(variable_name)
+
+    variables = list({make_variable(variable_name, variable_value)
+                      for input, _ in input_outputs
+                      for variable_name, variable_value in input.items() })
+
+    pcfg = {op: math.exp(-1) for op in operators} # cost = -log(p), should be 1
+    pcfg.update({type(v): math.exp(-1) for v in variables})
+
+    # for expression in pcfg_generator(10, operators, variables, input_outputs, pcfg):
+    for expression in bottom_up_generator(10, operators, [], input_outputs):
         if expression.return_type == "vector" and len(vector_basis) < size:
-            vector_basis.append((expression, cost))
+            vector_basis.append(expression)
         if expression.return_type == "matrix" and len(matrix_basis) < size:
-            matrix_basis.append((expression, cost))
+            matrix_basis.append(expression)
 
         if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
