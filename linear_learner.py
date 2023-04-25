@@ -307,8 +307,8 @@ if __name__ == '__main__':
             ("magnet1", simulate_charge_in_uniform_magnetic_field),
 
     ]:
-        # if arguments.simulation and arguments.simulation != name:
-            # continue
+        if arguments.simulation and arguments.simulation != name:
+            continue
         print(f"Testing physics learner on {name}")
         x, v, f, a = callback()
 
