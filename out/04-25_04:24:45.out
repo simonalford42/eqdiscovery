@@ -1,0 +1,354 @@
+Testing physics learner on drag3
+simulated drag3 data
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  138 functions
+For 2 particles interacting, 2 basis indices:  141 functions
+Removing  92 / 297 basis functions that cause numerical instability
+Removing  0 / 205 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  6 functions
+For 1 particles interacting, 2 basis indices:  6 functions
+For 2 particles interacting, 1 basis indices:  84 functions
+For 2 particles interacting, 2 basis indices:  109 functions
+ ==  == finished sparse regression ==  == 
+rank 110 / 200
+score 0.9999327198833652
+
+17409.60095555277 	 (/ (hat R) (dp R R)) 	 0 1
+1.003736522054871 	 (/ R (dp R R)) 	 0 1
+-0.15914624845210046 	 (* (len V) V) 	 0 0
+-0.029166577414424622 	 (* (dp V V) V) 	 0 0
+0.005684503974728665 	 (hat R) 	 0 1
+Basis shrunk. Reestimating with smaller basis of 5 functions
+Removing  0 / 5 basis functions that cause numerical instability
+Removing  0 / 5 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  2 functions
+For 1 particles interacting, 2 basis indices:  0 functions
+For 2 particles interacting, 1 basis indices:  3 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 8 / 10
+score 0.9999670640167521
+
+17902.76846406469 	 (/ (hat R) (dp R R)) 	 0 1
+-0.19717140078514936 	 (* (len V) V) 	 0 0
+0.010644920896083513 	 (hat R) 	 0 1
+-0.0017473687222474268 	 (* (dp V V) V) 	 0 0
+Basis shrunk. Reestimating with smaller basis of 4 functions
+Removing  0 / 4 basis functions that cause numerical instability
+Removing  0 / 4 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  2 functions
+For 1 particles interacting, 2 basis indices:  0 functions
+For 2 particles interacting, 1 basis indices:  2 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 6 / 8
+score 0.9999670690265184
+
+17902.97695605812 	 (/ (hat R) (dp R R)) 	 0 1
+-0.19717146765589325 	 (* (len V) V) 	 0 0
+0.010643831662222313 	 (hat R) 	 0 1
+-0.0017474009498290863 	 (* (dp V V) V) 	 0 0
+ ==  == acceleration learning has converged, reestimating coefficients ==  == 
+ ==  == finished sparse regression ==  == 
+rank 6 / 8
+score 1.0
+
+20000.000000000007 	 (/ (hat R) (dp R R)) 	 0 1
+-0.2000000000000001 	 (* (len V) V) 	 0 0
+
+
+
+
+
+
+Testing physics learner on falling
+simulated falling data
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  138 functions
+For 2 particles interacting, 2 basis indices:  141 functions
+Removing  0 / 297 basis functions that cause numerical instability
+Removing  111 / 297 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  88 functions
+For 2 particles interacting, 2 basis indices:  80 functions
+ ==  == finished sparse regression ==  == 
+rank 109 / 548
+score 0.9999983713238283
+
+1.9980274169452716 	 (/ (hat R) (dp R R)) 	 0 1
+0.9980274169452722 	 (/ (hat R) (dp R R)) 	 1 0
+Basis shrunk. Reestimating with smaller basis of 1 functions
+Removing  0 / 1 basis functions that cause numerical instability
+Removing  0 / 1 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  0 functions
+For 1 particles interacting, 2 basis indices:  0 functions
+For 2 particles interacting, 1 basis indices:  1 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 2 / 2
+score 0.9999983713238283
+
+1.9980274169452716 	 (/ (hat R) (dp R R)) 	 0 1
+0.9980274169452719 	 (/ (hat R) (dp R R)) 	 1 0
+ ==  == acceleration learning has converged, reestimating coefficients ==  == 
+ ==  == finished sparse regression ==  == 
+rank 2 / 2
+score 1.0
+
+2.000000000000001 	 (/ (hat R) (dp R R)) 	 0 1
+1.0000000000000007 	 (/ (hat R) (dp R R)) 	 1 0
+
+
+
+
+
+
+Testing physics learner on orbit
+simulated orbit data
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  138 functions
+For 2 particles interacting, 2 basis indices:  141 functions
+Removing  92 / 297 basis functions that cause numerical instability
+Removing  0 / 205 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  6 functions
+For 1 particles interacting, 2 basis indices:  6 functions
+For 2 particles interacting, 1 basis indices:  84 functions
+For 2 particles interacting, 2 basis indices:  109 functions
+ ==  == finished sparse regression ==  == 
+rank 310 / 640
+score 0.9999939803345894
+
+191.05709133250116 	 (/ (hat R) (dp R R)) 	 0 1
+0.8001176048591113 	 (/ (hat R) (dp R R)) 	 1 0
+0.004057691803047634 	 (* (dp V1 V1) (hat R)) 	 0 1
+-0.003210535293694934 	 (* (dp V2 V1) (hat R)) 	 0 1
+-0.00022799861439314856 	 (hat (* (dp R V1) R)) 	 0 1
+Basis shrunk. Reestimating with smaller basis of 4 functions
+Removing  0 / 4 basis functions that cause numerical instability
+Removing  0 / 4 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  0 functions
+For 1 particles interacting, 2 basis indices:  0 functions
+For 2 particles interacting, 1 basis indices:  4 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 8 / 8
+score 0.9999939833273378
+
+191.0605649743843 	 (/ (hat R) (dp R R)) 	 0 1
+0.8001176048591115 	 (/ (hat R) (dp R R)) 	 1 0
+0.0040560937681601945 	 (* (dp V1 V1) (hat R)) 	 0 1
+-0.003209063471440364 	 (* (dp V2 V1) (hat R)) 	 0 1
+-0.00022751519902377244 	 (hat (* (dp R V1) R)) 	 0 1
+ ==  == acceleration learning has converged, reestimating coefficients ==  == 
+ ==  == finished sparse regression ==  == 
+rank 8 / 8
+score 1.0
+
+199.99999999999974 	 (/ (hat R) (dp R R)) 	 0 1
+1.0000000000001021 	 (/ (hat R) (dp R R)) 	 1 0
+
+
+
+
+
+
+Testing physics learner on orbit2
+simulated orbit2 data
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  138 functions
+For 2 particles interacting, 2 basis indices:  141 functions
+Removing  92 / 297 basis functions that cause numerical instability
+Removing  0 / 205 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  6 functions
+For 1 particles interacting, 2 basis indices:  6 functions
+For 2 particles interacting, 1 basis indices:  84 functions
+For 2 particles interacting, 2 basis indices:  109 functions
+ ==  == finished sparse regression ==  == 
+rank 665 / 1866
+score 0.9999907971371815
+
+198.5678566012381 	 (/ (hat R) (dp R R)) 	 1 2
+191.7940563255567 	 (/ (hat R) (dp R R)) 	 0 2
+0.58388652383669 	 (/ (hat R) (dp R R)) 	 2 0
+0.036135456894776784 	 (/ R (dp R R)) 	 2 1
+0.014922034983056375 	 (/ R (dp R R)) 	 1 2
+-0.0056357055526539855 	 (* (dp V2 V1) (hat R)) 	 2 0
+0.003686785468253949 	 (* (dp V1 V1) (hat R)) 	 0 2
+0.00014049320821001685 	 (* (dp V1 V1) (hat R)) 	 1 2
+Basis shrunk. Reestimating with smaller basis of 4 functions
+Removing  0 / 4 basis functions that cause numerical instability
+Removing  0 / 4 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  0 functions
+For 1 particles interacting, 2 basis indices:  0 functions
+For 2 particles interacting, 1 basis indices:  4 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 24 / 24
+score 0.999990868709726
+
+198.56561776390876 	 (/ (hat R) (dp R R)) 	 1 2
+192.49569222941284 	 (/ (hat R) (dp R R)) 	 0 2
+0.5876548335834207 	 (/ (hat R) (dp R R)) 	 2 0
+0.040812126675978416 	 (/ R (dp R R)) 	 2 1
+0.014867720544260063 	 (/ R (dp R R)) 	 1 2
+-0.005947037310969846 	 (* (dp V2 V1) (hat R)) 	 2 0
+0.0033929228733685477 	 (* (dp V1 V1) (hat R)) 	 0 2
+0.0001414270032135488 	 (* (dp V1 V1) (hat R)) 	 1 2
+ ==  == acceleration learning has converged, reestimating coefficients ==  == 
+ ==  == finished sparse regression ==  == 
+rank 24 / 24
+score 1.0
+
+200.00000000000026 	 (/ (hat R) (dp R R)) 	 0 2
+199.99999999999994 	 (/ (hat R) (dp R R)) 	 1 2
+2.000000000001413 	 (/ (hat R) (dp R R)) 	 0 1
+1.9999999999999565 	 (/ (hat R) (dp R R)) 	 2 1
+1.0000000000000993 	 (/ (hat R) (dp R R)) 	 1 0
+0.9999999999999815 	 (/ (hat R) (dp R R)) 	 2 0
+
+
+
+
+
+
+Testing physics learner on drag1
+simulated drag1 data
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  138 functions
+For 2 particles interacting, 2 basis indices:  141 functions
+Removing  279 / 297 basis functions that cause numerical instability
+Removing  0 / 18 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  0 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 10 / 26
+score 0.999999
+
+-0.0999221889406166 	 V 	 0 0
+Basis shrunk. Reestimating with smaller basis of 1 functions
+Removing  0 / 1 basis functions that cause numerical instability
+Removing  0 / 1 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  1 functions
+For 1 particles interacting, 2 basis indices:  0 functions
+For 2 particles interacting, 1 basis indices:  0 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 1 / 1
+score 0.999999
+
+-0.09992218894061658 	 V 	 0 0
+ ==  == acceleration learning has converged, reestimating coefficients ==  == 
+ ==  == finished sparse regression ==  == 
+rank 1 / 1
+score 1.0
+
+-0.0999999999999999 	 V 	 0 0
+
+
+
+
+
+
+Testing physics learner on drag2
+simulated drag2 data
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  138 functions
+For 2 particles interacting, 2 basis indices:  141 functions
+Removing  279 / 297 basis functions that cause numerical instability
+Removing  0 / 18 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  10 functions
+For 1 particles interacting, 2 basis indices:  8 functions
+For 2 particles interacting, 1 basis indices:  0 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 10 / 26
+score 0.9999986296625504
+
+-0.09929965096204123 	 (* (len V) V) 	 0 0
+-0.01292946864407938 	 V 	 0 0
+Basis shrunk. Reestimating with smaller basis of 2 functions
+Removing  0 / 2 basis functions that cause numerical instability
+Removing  0 / 2 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  2 functions
+For 1 particles interacting, 2 basis indices:  0 functions
+For 2 particles interacting, 1 basis indices:  0 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 2 / 2
+score 0.999999
+
+-0.09990016397006912 	 (* (len V) V) 	 0 0
+Basis shrunk. Reestimating with smaller basis of 1 functions
+Removing  0 / 1 basis functions that cause numerical instability
+Removing  0 / 1 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  1 functions
+For 1 particles interacting, 2 basis indices:  0 functions
+For 2 particles interacting, 1 basis indices:  0 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 1 / 1
+score 0.999999
+
+-0.09990016397006911 	 (* (len V) V) 	 0 0
+ ==  == acceleration learning has converged, reestimating coefficients ==  == 
+ ==  == finished sparse regression ==  == 
+rank 1 / 1
+score 1.0
+
+-0.10000000000000003 	 (* (len V) V) 	 0 0
+
+
+
+
+
+
+Testing physics learner on magnet1
+simulated magnet1 data
+For 1 particles interacting, 1 basis indices:  150 functions
+For 1 particles interacting, 2 basis indices:  150 functions
+For 2 particles interacting, 1 basis indices:  129 functions
+For 2 particles interacting, 2 basis indices:  129 functions
+Removing  286 / 558 basis functions that cause numerical instability
+Removing  173 / 272 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  43 functions
+For 1 particles interacting, 2 basis indices:  56 functions
+For 2 particles interacting, 1 basis indices:  0 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 107 / 211
+score 0.999879
+
+0.9891041853006229 	 (skew V) 	 0 0 2
+Basis shrunk. Reestimating with smaller basis of 1 functions
+Removing  0 / 1 basis functions that cause numerical instability
+Removing  0 / 1 basis functions that are redundant:
+For 1 particles interacting, 1 basis indices:  0 functions
+For 1 particles interacting, 2 basis indices:  1 functions
+For 2 particles interacting, 1 basis indices:  0 functions
+For 2 particles interacting, 2 basis indices:  0 functions
+ ==  == finished sparse regression ==  == 
+rank 3 / 3
+score 0.999879
+
+0.9891041853006229 	 (skew V) 	 0 0 2
+ ==  == acceleration learning has converged, reestimating coefficients ==  == 
+ ==  == finished sparse regression ==  == 
+rank 3 / 3
+score 1.0
+
+0.9999999999999992 	 (skew V) 	 0 0 2
+
+
+
+
+
+
