@@ -385,7 +385,7 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
         return False
 
     for terminal in variables_and_constants:
-        if record_new_expression(terminal, 1): yield (terminal, 1)
+        if record_new_expression(terminal, 1): yield terminal
 
     for target_size in range(2, global_bound + 1): # enumerate programs of increasing size
         for operator in operators:
@@ -398,8 +398,7 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
                 for arguments in itertools.product(*candidate_arguments):
                     new_expression = operator(*[e for e,v in arguments ])
                     if record_new_expression(new_expression, target_size):
-                        # include default cost of 1
-                        yield (new_expression, 1)
+                        yield new_expression
     return
 #ending
     assert False, "implement as part of homework"
