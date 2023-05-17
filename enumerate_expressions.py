@@ -524,8 +524,8 @@ def construct_basis(reals, vectors, size, dimension=3):
     pcfg = {op: math.exp(-1) for op in operators} # cost = -log(p), should be 1
     pcfg.update({type(v): math.exp(-1) for v in variables})
 
-    # for expression in pcfg_generator(10, operators, variables, input_outputs, pcfg):
-    for expression in bottom_up_generator(10, operators, [], input_outputs):
+    for expression in pcfg_generator(10, operators, variables, input_outputs, pcfg):
+    # for expression in bottom_up_generator(10, operators, [], input_outputs):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
         if expression.return_type == "matrix" and len(matrix_basis) < size:

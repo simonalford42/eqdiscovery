@@ -3,7 +3,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-def simulate_charge_dipole(masses=[1., 1.], positions=[[0.,0.,0.], [1., 1., 1.]], velocities=[[0.,1.,1.,], [0., 1., 1.]], T=10, steps=1000,
+def simulate_charge_dipole(masses, positions, velocities, T, steps=None,
                            dt=0.01):
     """https://www.compadre.org/osp/pwa/motionneardipole/"""
 
