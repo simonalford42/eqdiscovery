@@ -57,7 +57,7 @@ def arrays_proportional(x, y, tolerance=0.02):
 
 
 class AccelerationLearner():
-    def __init__(self, dimension, alpha, penalty, basis):
+    def __init__(self, dimension, alpha, penalty, basis, use_pcfg=False):
         self.alpha = alpha
         self.dimension = dimension
         self.penalty = penalty
@@ -68,9 +68,10 @@ class AccelerationLearner():
             self.basis[(n_particles, n_indices)] is an list of expressions for `n_particles` interacting (probably 1 or 2) and n_indices is the number of indices in the return value of the basis function. For example, if the basis function returns a vector, n_indices=1. For a matrix, n_indices=2b
             """
             self.basis = {}
+            self.pcfg_basis = {}
             # construct basis functions both for interaction forces and individual particle forces
             self.basis[(2,1)], self.basis[(2,2)] = construct_basis([], ["R", "V1", "V2"], basis,
-                                                                   dimension=dimension)
+                                                                   dimension=dimension, use_pcfg=use_pcfg)
 
             # remove any interaction forces which do not involve both particles
             self.basis[(2,1)] = [e
@@ -84,7 +85,7 @@ class AccelerationLearner():
                                  ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
 
             self.basis[(1,1)], self.basis[(1,2)]  = construct_basis([], ["V"], basis,
-                                                                    dimension=dimension)
+                                                                    dimension=dimension, use_pcfg=use_pcfg)
 
             self.show_basis_function_counts()
         else:
@@ -361,6 +362,7 @@ if __name__ == '__main__':
     parser.add_argument("--basis", "-b", default=200, type=int, help="number of basis functions")
     parser.add_argument("--latent", "-l", default=0, type=int, help="number of latent parameters to associate with each particle (in addition to its mass) ")
     parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
+    parser.add_argument("--pcfg", "-P", default=False, action="store_true", help="use pcfg enumeration for basis functions")
     arguments = parser.parse_args()
 
     for name, callback in [
@@ -390,7 +392,8 @@ if __name__ == '__main__':
         al = AccelerationLearner(dimension,
                                  arguments.alpha,
                                  arguments.penalty,
-                                 arguments.basis)
+                                 arguments.basis,
+                                 arguments.pcfg)
         al = al.fit(x, v, a)
 
         # fl = ForceLearner(0, arguments.lines)

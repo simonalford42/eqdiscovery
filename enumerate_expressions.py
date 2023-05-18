@@ -439,7 +439,7 @@ def integer_partitions(target_value, number_of_arguments):
              for x2s in integer_partitions(target_value - x1, number_of_arguments - 1) ]
 
 
-def pcfg_generator(cost_bound, operators, constants, input_outputs, pcfg: dict[type, float]):
+def pcfg_generator(cost_bound, operators, constants, inputs, pcfg: dict[type, float]):
     """
     Enumerate programs from a probabilistic context-free grammar (PCFG) that are semantically distinct on the input examples.
 
@@ -453,23 +453,57 @@ def pcfg_generator(cost_bound, operators, constants, input_outputs, pcfg: dict[t
     Uses approach from https://dl.acm.org/doi/10.1145/3428295
     """
 
+    # variables and constants should be treated the same, because they are both leaves in syntax trees
+    # after computing `variables_and_constants`, you should no longer refer to `constants`. express everything in terms of `variables_and_constants`
+    # `make_variable` is just a helper function for making variables that smartly wraps the variable name in the correct class depending on the type of the variable
+    def make_variable(variable_name, variable_value):
+        if isinstance(variable_value, float): return Real(variable_name)
+        if isinstance(variable_value, np.ndarray): return Vector(variable_name)
+
+    variables = list({make_variable(variable_name, variable_value)
+                      for input in inputs
+                      for variable_name, variable_value in input.items() })
+    variables_and_constants = constants + variables
+
+    # a mapping from a tuple of (type, expression_size) to all of the possible values that can be computed of that type using an expression of that size
+
     observed_values = set()
+
     enumerated_expressions = {}
     def record_new_expression(expression, cost):
         """Returns True iff the semantics of this expression has never been seen before"""
-        nonlocal input_outputs, observed_values
+        nonlocal inputs, observed_values
 
-        valuation = tuple(expression.evaluate(input) for input, _ in input_outputs)
-        values = tuple(str(v) for v in valuation)
+        valuation = np.array([expression.evaluate(input) for input in inputs])
 
-        if values not in observed_values:
-            observed_values.add(values)
+        # discard all zeros
+        if np.max(np.abs(valuation)) < 1e-5:
+            return False # bad expression
+
+        # discard invalid
+        if np.any(~np.isfinite(valuation)):
+            return False
+
+        # homogeneity assumption:
+        # we only care about the direction, not rescaling or sign changes
+        valuation = valuation / np.linalg.norm(valuation)
+
+        # things we hash
+        v1 = np.around(valuation*100, decimals=5).tobytes()
+        v2 = np.around(-valuation*100, decimals=5).tobytes()
+
+        # is this something we have not seen before?
+        if v1 not in observed_values and v2 not in observed_values:
+            observed_values.add(v1)
+
+            # we have some new behavior
             key = (expression.__class__.return_type, cost)
 
             if key not in enumerated_expressions:
                 enumerated_expressions[key] = []
 
-            enumerated_expressions[key].append((expression, values))
+            enumerated_expressions[key].append( (expression, v1) )
+
             return True
 
         return False
@@ -497,8 +531,8 @@ def pcfg_generator(cost_bound, operators, constants, input_outputs, pcfg: dict[t
     return
 
 basis_cache = {}
-def construct_basis(reals, vectors, size, dimension=3):
-    basis_key = (tuple(reals), tuple(vectors), size, dimension)
+def construct_basis(reals, vectors, size, dimension=3, use_pcfg=False):
+    basis_key = (tuple(reals), tuple(vectors), size, dimension, use_pcfg)
     if basis_key in basis_cache: return basis_cache[basis_key]
 
     operators = [Hat, Outer, Inner, Divide, Times, Scale, Reciprocal, ScaleInverse, Length]
@@ -530,8 +564,12 @@ def construct_basis(reals, vectors, size, dimension=3):
     pcfg = {op: math.exp(-1) for op in operators} # cost = -log(p), should be 1
     pcfg.update({type(v): math.exp(-1) for v in variables})
 
-    for expression in pcfg_generator(10, operators, variables, input_outputs, pcfg):
-    # for expression in bottom_up_generator(10, operators, constants, inputs):
+    if use_pcfg:
+        generator = pcfg_generator(10, operators, variables, inputs, pcfg)
+    else:
+        generator = bottom_up_generator(10, operators, constants, inputs)
+
+    for expression in generator:
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
         if expression.return_type == "matrix" and len(matrix_basis) < size:
@@ -543,7 +581,15 @@ def construct_basis(reals, vectors, size, dimension=3):
     return basis_cache[basis_key]
 
 if __name__ == '__main__':
-    for e in construct_basis([],#"R", "V1","V2"
-                             ["R", "V1","V2"],
-                             10000)[1]:
-        print(e.pretty_print())
+    vector_basis, matrix_basis = construct_basis(
+        [], ["R", "V1","V2"], size=200, use_pcfg=False)
+    pcfg_vector_basis, pcfg_matrix_basis = construct_basis(
+        [], ["R", "V1","V2"], size=200, use_pcfg=True)
+
+    print(f'{len(vector_basis)=}')
+    print(f'{len(pcfg_vector_basis)=}')
+    print(f'{len(matrix_basis)=}')
+    print(f'{len(pcfg_matrix_basis)=}')
+
+    for i in range(len(vector_basis)):
+        print(vector_basis[i].pretty_print() + '\t\t' + pcfg_vector_basis[i].pretty_print())
