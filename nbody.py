@@ -110,7 +110,7 @@ def simulate_2_orbits():
     return simulate_gravity([light_mass1,light_mass2,heavy_mass],
                             [[radius1,0],[radius2,0],[0,0]],
                             [[0,velocity1],[0,velocity2],[0,0]],
-                            50, steps=1000)
+                            50, steps=100)
 
 def simulate_falling():
     light_mass = 1

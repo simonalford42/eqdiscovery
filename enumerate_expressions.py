@@ -329,12 +329,12 @@ class Hat(Expression):
 #starting
     def arguments(self): return [self.x, self.y]
 
-def bottom_up_generator(global_bound, operators, constants, input_outputs):
+def bottom_up_generator(global_bound, operators, constants, inputs):
     """
     global_bound: int. an upper bound on the size of expression
     operators: list of classes, such as [Times, If, ...]
     constants: list of possible leaves in syntax tree, such as [Number(1)]. Variables can also be leaves, but these are automatically inferred from `input_outputs`
-    input_outputs: list of tuples of environment (the input) and desired output, such as [({'x': 5}, 6), ({'x': 1}, 2)]
+    inputs: list of environments (the input), such as [{'x': 5}, {'x': 1}]
     yields: sequence of programs, ordered by expression size, which are semantically distinct on the input examples
     """
 
@@ -346,32 +346,40 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
         if isinstance(variable_value, np.ndarray): return Vector(variable_name)
 
     variables = list({make_variable(variable_name, variable_value)
-                      for inputs, outputs in input_outputs
-                      for variable_name, variable_value in inputs.items() })
+                      for input in inputs
+                      for variable_name, variable_value in input.items() })
     variables_and_constants = constants + variables
 
-    # suggested data structure (you don't have to use this if you don't want):
     # a mapping from a tuple of (type, expression_size) to all of the possible values that can be computed of that type using an expression of that size
-#starting
+
     observed_values = set()
 
     enumerated_expressions = {}
     def record_new_expression(expression, size):
         """Returns True iff the semantics of this expression has never been seen before"""
-        nonlocal input_outputs, observed_values
+        nonlocal inputs, observed_values
 
-        valuation = tuple(expression.evaluate(input) for input, output in input_outputs)
+        valuation = np.array([expression.evaluate(input) for input in inputs])
 
-        # discard all zeros?
-        #if all( np.max(np.abs(v)) < 1e-5 for v in valuation ):
-        #    return False # bad expression
+        # discard all zeros
+        if np.max(np.abs(valuation)) < 1e-5:
+            return False # bad expression
 
-        # calculate what values are produced on these inputs
-        values = tuple(str(v) for v in valuation)
+        # discard invalid
+        if np.any(~np.isfinite(valuation)):
+            return False
+
+        # homogeneity assumption:
+        # we only care about the direction, not rescaling or sign changes
+        valuation = valuation / np.linalg.norm(valuation)
+
+        # things we hash
+        v1 = np.around(valuation*100, decimals=5).tobytes()
+        v2 = np.around(-valuation*100, decimals=5).tobytes()
 
         # is this something we have not seen before?
-        if values not in observed_values:
-            observed_values.add(values)
+        if v1 not in observed_values and v2 not in observed_values:
+            observed_values.add(v1)
 
             # we have some new behavior
             key = (expression.__class__.return_type, size)
@@ -379,7 +387,7 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
             if key not in enumerated_expressions:
                 enumerated_expressions[key] = []
 
-            enumerated_expressions[key].append( (expression, values) )
+            enumerated_expressions[key].append( (expression, v1) )
 
             return True
 
@@ -401,8 +409,6 @@ def bottom_up_generator(global_bound, operators, constants, input_outputs):
                     if record_new_expression(new_expression, target_size):
                         yield new_expression
     return
-#ending
-    assert False, "implement as part of homework"
 
 def integer_partitions(target_value, number_of_arguments):
     """
@@ -490,7 +496,6 @@ def pcfg_generator(cost_bound, operators, constants, input_outputs, pcfg: dict[t
                             yield new_expression
     return
 
-
 basis_cache = {}
 def construct_basis(reals, vectors, size, dimension=3):
     basis_key = (tuple(reals), tuple(vectors), size, dimension)
@@ -499,6 +504,7 @@ def construct_basis(reals, vectors, size, dimension=3):
     operators = [Hat, Outer, Inner, Divide, Times, Scale, Reciprocal, ScaleInverse, Length]
     if dimension == 3: operators.extend([Skew, Cross])
 
+    constants = []
     def random_input():
         d = {}
         for nm in reals:
@@ -507,8 +513,8 @@ def construct_basis(reals, vectors, size, dimension=3):
             d[nm] = np.random.random(dimension)*10-5
         return d
 
-    input_outputs = [(random_input(), None)
-                     for _ in range(10) ]
+    inputs = [random_input()
+              for _ in range(10) ]
     count = 0
     vector_basis = []
     matrix_basis = []
@@ -518,14 +524,14 @@ def construct_basis(reals, vectors, size, dimension=3):
         if isinstance(variable_value, np.ndarray): return Vector(variable_name)
 
     variables = list({make_variable(variable_name, variable_value)
-                      for input, _ in input_outputs
+                      for input in inputs
                       for variable_name, variable_value in input.items() })
 
     pcfg = {op: math.exp(-1) for op in operators} # cost = -log(p), should be 1
     pcfg.update({type(v): math.exp(-1) for v in variables})
 
-    for expression in pcfg_generator(10, operators, variables, input_outputs, pcfg):
-    # for expression in bottom_up_generator(10, operators, [], input_outputs):
+    # for expression in pcfg_generator(10, operators, variables, input_outputs, pcfg):
+    for expression in bottom_up_generator(10, operators, constants, inputs):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
         if expression.return_type == "matrix" and len(matrix_basis) < size:

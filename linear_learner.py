@@ -5,6 +5,8 @@ from nbody import *
 from magnet import *
 from animate import animate
 from enumerate_expressions import *
+# from nearest_neighbor import FastNN
+from force_learner import *
 import numpy as np
 import random
 
@@ -84,8 +86,6 @@ class AccelerationLearner():
             self.basis[(1,1)], self.basis[(1,2)]  = construct_basis([], ["V"], basis,
                                                                     dimension=dimension)
 
-            #self.restrict_basis("(* (len V) V)", "(op V V)")
-
             self.show_basis_function_counts()
         else:
             assert isinstance(basis, dict)
@@ -104,6 +104,28 @@ class AccelerationLearner():
         for i in [1,2]:
             for j in [1,2]:
                 print(f"For {i} particles interacting, {j} basis indices:  {len(self.basis[(i,j)])} functions")
+
+    def show_laws(self):
+        print()
+        for i, terms in enumerate(self.acceleration_laws):
+
+            pretty_terms = []
+            for basis_function, i, j, coefficient in terms:
+                pretty = basis_function.pretty_print()
+                if i == j:
+                    pretty = pretty.replace("V", f"V_{i}")
+                else:
+                    pretty = pretty.replace("V1", f"V_{i}").replace("V2", f"V_{j}").replace("R", f"R_{i}{j}")
+                if basis_function.return_type == "vector":
+                    pretty = "%.03f * %s"%(coefficient, pretty)
+                elif basis_function.return_type == "matrix":
+                    pretty = "%s [%.03f,%.03f,%.03f]"%(pretty,
+                                                       coefficient[0],coefficient[1],coefficient[2])
+                else:
+                    assert False
+                pretty_terms.append(pretty)
+
+            print(f"a_{i} = {' + '.join(pretty_terms)}")
 
     def evaluate_basis_functions(self, x, v):
         """
@@ -173,9 +195,13 @@ class AccelerationLearner():
                 else:
                     particle_pairs = [(i,j) for i in range(N) for j in range(N) if i != j]
 
-                signature[b] = np.stack([valuation_dictionary[(b, t, i, j)]
-                                         for t in range(T)
-                                         for i,j in particle_pairs])
+                sig = np.stack([valuation_dictionary[(b, t, i, j)]
+                                for t in range(T)
+                                for i,j in particle_pairs])
+                sig = np.reshape(sig, -1)
+                sig = sig / np.linalg.norm(sig)
+
+                signature[b] = sig
 
 
         for n_particles in [1,2]:
@@ -184,6 +210,7 @@ class AccelerationLearner():
                     for b2 in self.basis[(n_particles, n_indices)][:n]:
                         if arrays_proportional(signature[b1], signature[b2]):
                             problematic_functions.add(b1)
+                            print(b1.pretty_print(), "made redundant by", b2.pretty_print())
                             break
 
         print("Removing ", len(problematic_functions), "/", self.basis_size,
@@ -286,6 +313,37 @@ class AccelerationLearner():
             for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
                 print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
 
+            # now we convert to acceleration laws
+            self.acceleration_laws = []
+            for i in range(N):
+                this_law = []
+                for n_particles in [1,2]:
+                    for n_indices in [1,2]:
+                        for b in self.basis[(n_particles, n_indices)]:
+
+                            if n_particles == 1: others = [i]
+                            else: others = [o for o in range(N) if o != i ]
+
+                            for j in others:
+                                matches = [ (w, *more_objects)
+                                            for w, (basis_expression, object1, *more_objects) in model
+                                            if basis_expression == b and object1 == i and more_objects[0] == j]
+                                if len(matches) == 0: continue
+
+                                if n_indices == 1:
+                                    assert len(matches) == 1
+                                    this_law.append((b, i, j, matches[0][0]))
+
+                                if n_indices == 2:
+                                    assert len(matches) <= 3
+                                    latent_vector = np.zeros(3)
+                                    for coefficient, _, idx in matches: latent_vector[idx] = coefficient
+                                    this_law.append((b, i, j, latent_vector))
+
+                self.acceleration_laws.append(this_law)
+
+            self.show_laws()
+
             return self
 
 if __name__ == '__main__':
@@ -296,9 +354,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = "")
     parser.add_argument("--simulation", "-s")
     parser.add_argument("--alpha", "-a", default=1e-3, type=float, help="controls sparsity")
+    parser.add_argument("--embed", "-e", default=False, action="store_true", help="embed in 3d")
     parser.add_argument("--penalty", "-p", default=10, type=float,
                         help="penalty for introducing latent vectors")
     parser.add_argument("--animate", "-m", default=False, action="store_true")
+    parser.add_argument("--basis", "-b", default=200, type=int, help="number of basis functions")
+    parser.add_argument("--latent", "-l", default=0, type=int, help="number of latent parameters to associate with each particle (in addition to its mass) ")
+    parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
     arguments = parser.parse_args()
 
     for name, callback in [
@@ -323,10 +385,17 @@ if __name__ == '__main__':
             animate(x[::x.shape[0]//100], fn=name)
             print(f"animated physics into {name}")
 
-        AccelerationLearner(3 if "magnet" in name else 2,
-                            arguments.alpha,
-                            arguments.penalty,
-                            150).fit(x, v, a)
+        dimension = 3 if arguments.embed else x.shape[-1]
+
+        al = AccelerationLearner(dimension,
+                                 arguments.alpha,
+                                 arguments.penalty,
+                                 arguments.basis)
+        al = al.fit(x, v, a)
+
+        # fl = ForceLearner(0, arguments.lines)
+        # fl.fit(al.acceleration_laws)
+
 
         print()
         print()
