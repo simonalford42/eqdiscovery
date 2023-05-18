@@ -582,14 +582,17 @@ def construct_basis(reals, vectors, size, dimension=3, use_pcfg=False):
 
 if __name__ == '__main__':
     vector_basis, matrix_basis = construct_basis(
-        [], ["R", "V1","V2"], size=200, use_pcfg=False)
-    pcfg_vector_basis, pcfg_matrix_basis = construct_basis(
-        [], ["R", "V1","V2"], size=200, use_pcfg=True)
+        [], ["R", "V1","V2"], size=4000, use_pcfg=False)
 
-    print(f'{len(vector_basis)=}')
-    print(f'{len(pcfg_vector_basis)=}')
-    print(f'{len(matrix_basis)=}')
-    print(f'{len(pcfg_matrix_basis)=}')
+    print('basis constructed')
+    for i in range(len(vector_basis)):
+        print(vector_basis[i].pretty_print())
+        if vector_basis[i].pretty_print() == '(skew (/ V1 (dp R (* (len R) R))))':
+            print(f"found it, {i}")
+            break
 
     for i in range(len(vector_basis)):
-        print(vector_basis[i].pretty_print() + '\t\t' + pcfg_vector_basis[i].pretty_print())
+        print(matrix_basis[i].pretty_print())
+        if matrix_basis[i].pretty_print() == '(skew (/ V1 (dp R (* (len R) R))))':
+            print(f"found it, {i}")
+            break
