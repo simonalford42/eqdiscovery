@@ -492,7 +492,8 @@ def construct_basis(reals, vectors, size, dimension=3, weighted=False):
         cost_dict = {op: 500 for op in operators}
         cost_dict.update({type(v): 1 for v in variables_and_constants})
         for term in [Inner, ScaleInverse, Times, Cross]:
-            cost_dict[term] = 1
+            cost_dict[term] = 2
+        cost_dict[Inner] = 1
 
     for expression in weighted_bottom_up_generator(20, operators, constants,
                                                   inputs, cost_dict=cost_dict):
