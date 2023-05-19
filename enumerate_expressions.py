@@ -49,7 +49,7 @@ class Real(Expression):
 
     def evaluate(self, environment):
         return environment[self.name]
-#starting
+
     def arguments(self): return []
 
 class Vector(Expression):
@@ -108,6 +108,8 @@ class Times(Expression):
         y = self.y.evaluate(environment)
         return x * y
 
+    def arguments(self): return [self.x, self.y]
+
 class Divide(Expression):
     return_type = "real"
     argument_types = ["real","real"]
@@ -127,6 +129,9 @@ class Divide(Expression):
         #y[np.] = np.clip(y, 1e-3, None)
         return  x / y
 
+    def arguments(self): return [self.x, self.y]
+
+
 class Reciprocal(Expression):
     return_type = "real"
     argument_types = ["real"]
@@ -143,6 +148,8 @@ class Reciprocal(Expression):
     def evaluate(self, environment):
         x = self.x.evaluate(environment)
         return 1/x
+
+    def arguments(self): return [self.x, self.y]
 
 class Inner(Expression):
     return_type = "real"
@@ -163,7 +170,6 @@ class Inner(Expression):
         if isinstance(x, np.ndarray):
             return np.sum(x * y, -1)
         return (x * y).sum(-1).unsqueeze(-1)
-
 
     def arguments(self): return [self.x, self.y]
 
@@ -187,7 +193,6 @@ class Cross(Expression):
             return np.cross(x, y)
         assert False
         return (x * y).sum(-1).unsqueeze(-1)
-
 
     def arguments(self): return [self.x, self.y]
 
@@ -258,8 +263,7 @@ class Length(Expression):
         x = self.x.evaluate(environment)
         return np.sum(x * x)**0.5
 
-#starting
-    def arguments(self): return [self.x, self.y]
+    def arguments(self): return [self.x]
 
 
 class Scale(Expression):
@@ -280,7 +284,6 @@ class Scale(Expression):
         y = self.y.evaluate(environment)
         return x * y
 
-#starting
     def arguments(self): return [self.x, self.y]
 
 class ScaleInverse(Expression):
@@ -301,7 +304,6 @@ class ScaleInverse(Expression):
         y = self.y.evaluate(environment)
         return x / y
 
-#starting
     def arguments(self): return [self.x, self.y]
 
 class Hat(Expression):
@@ -326,12 +328,12 @@ class Hat(Expression):
         else:
             return x/(((x*x).sum(-1)**0.5).unsqueeze(-1))
 
-#starting
-    def arguments(self): return [self.x, self.y]
+    def arguments(self): return [self.x]
 
-def weighted_bottom_up_generator(global_bound, operators, constants, inputs, cost_dict=None):
+
+def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_dict=None):
     """
-    global_bound: int. an upper bound on the size of expression
+    cost_bound: int. an upper bound on the cost of expression
     operators: list of classes, such as [Times, If, ...]
     constants: list of possible leaves in syntax tree, such as [Number(1)]. Variables can also be leaves, but these are automatically inferred from `input_outputs`
     inputs: list of environments (the input), such as [{'x': 5}, {'x': 1}]
@@ -351,8 +353,15 @@ def weighted_bottom_up_generator(global_bound, operators, constants, inputs, cos
     # a mapping from a tuple of (type, expression_size) to all of the possible values that can be computed of that type using an expression of that size
     observed_values = set()
 
+    R = Vector('R')
+    V1 = Vector('V1')
+    goal_expression = Divide(Cross(R, V1), Times(Inner(R, R), Inner(R, R)))
+    goal_valuation = np.array([goal_expression.evaluate(input) for input in inputs])
+    goal_valuation = goal_valuation / np.linalg.norm(goal_valuation)
+    goal_v1 = np.around(goal_valuation*100, decimals=5).tobytes()
+
     enumerated_expressions = {}
-    def record_new_expression(expression, size):
+    def record_new_expression(expression, cost):
         """Returns True iff the semantics of this expression has never been seen before"""
         nonlocal inputs, observed_values
 
@@ -370,60 +379,66 @@ def weighted_bottom_up_generator(global_bound, operators, constants, inputs, cos
         # we only care about the direction, not rescaling or sign changes
         valuation = valuation / np.linalg.norm(valuation)
 
+        # if (expression.pretty_print().startswith('(/ (X R V1)')
+            # or expression.pretty_print().startswith('(/ (X V1 R)')):
+            # print(expression.pretty_print())
+
         # things we hash
         v1 = np.around(valuation*100, decimals=5).tobytes()
         v2 = np.around(-valuation*100, decimals=5).tobytes()
+
+        if v1 == goal_v1 or v2 == goal_v1:
+            print(f'found a match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
+            assert False
 
         # is this something we have not seen before?
         if v1 not in observed_values and v2 not in observed_values:
             observed_values.add(v1)
 
             # we have some new behavior
-            key = (expression.__class__.return_type, size)
+            key = (expression.__class__.return_type, cost)
 
             if key not in enumerated_expressions:
                 enumerated_expressions[key] = []
 
-            enumerated_expressions[key].append( (expression, v1) )
-
+            enumerated_expressions[key].append( (expression, (v1, len(observed_values))))
             return True
 
         return False
 
-    for terminal in variables_and_constants:
-        if record_new_expression(terminal, 1): yield terminal
+    lvl = 1
+    while True:
+        for terminal in variables_and_constants:
+            if cost_dict[type(terminal)] == lvl:
+                if record_new_expression(terminal, lvl):
+                    yield terminal
 
-    for target_size in range(2, global_bound + 1): # enumerate programs of increasing size
         for operator in operators:
-            partitions = integer_partitions(target_size - 1 - len(operator.argument_types),
-                                            len(operator.argument_types))
-            for argument_sizes in partitions:
-                actual_argument_sizes = [sz+1 for sz in argument_sizes]
-                candidate_arguments = [enumerated_expressions.get(type_and_size, [])
-                                       for type_and_size in zip(operator.argument_types, actual_argument_sizes)]
-                for arguments in itertools.product(*candidate_arguments):
-                    new_expression = operator(*[e for e,_ in arguments ])
-                    if record_new_expression(new_expression, target_size):
-                        yield new_expression
-    return
+            op_cost = cost_dict[operator]
+            if op_cost < lvl:
+                for arg_costs in integer_partitions(lvl - op_cost, len(operator.argument_types)):
+                    candidate_arguments = [enumerated_expressions.get((typ, cost), [])
+                                           for typ, cost in zip(operator.argument_types, arg_costs)]
+
+                    for arguments in itertools.product(*candidate_arguments):
+                        # note: could make use of precomputed evaluation of
+                        # subtrees when evaluating later
+                        new_expression = operator(*[e for e,v in arguments])
+                        if record_new_expression(new_expression, lvl):
+                            if len(observed_values) % 1000 == 0:
+                                print(f'{len(observed_values)} expressions')
+                            yield new_expression
+
+        lvl += 1
+        if cost_bound and lvl > cost_bound:
+            break
+
+
 
 def integer_partitions(target_value, number_of_arguments):
-    """
-    Returns all ways of summing up to `target_value` by adding `number_of_arguments` nonnegative integers
-    useful when implementing `bottom_up_generator`:
-
-    Imagine that you are trying to enumerate all expressions of size 10, and you are considering using an operator with 3 arguments.
-    So the total size has to be 10, which includes +1 from this operator, as well as 3 other terms from the 3 arguments, which together have to sum to 10.
-    Therefore: 10 = 1 + size_of_first_argument + size_of_second_argument + size_of_third_argument
-    Also, every argument has to be of size at least one, because you can't have a syntax tree of size 0
-    Therefore: 10 = 1 + (1 + size_of_first_argument_minus_one) + (1 + size_of_second_argument_minus_one) + (1 + size_of_third_argument_minus_one)
-    So, by algebra:
-         10 - 1 - 3 = size_of_first_argument_minus_one + size_of_second_argument_minus_one + size_of_third_argument_minus_one
-    where: size_of_first_argument_minus_one >= 0
-           size_of_second_argument_minus_one >= 0
-           size_of_third_argument_minus_one >= 0
-    Therefore: the set of allowed assignments to {size_of_first_argument_minus_one,size_of_second_argument_minus_one,size_of_third_argument_minus_one} is just the integer partitions of (10 - 1 - 3).
-    """
+    """ Returns all ways of summing up to `target_value` by adding
+        `number_of_arguments` nonnegative integers.
+     """
 
     if target_value < 0:
         return []
@@ -468,18 +483,19 @@ def construct_basis(reals, vectors, size, dimension=3, weighted=False):
     matrix_basis = []
 
     variables = infer_variables(inputs)
+    print(f'{variables=}')
     constants = []
     variables_and_constants = variables + constants
 
     cost_dict = None
     if weighted:
-        cost_dict = {op: 2 for op in operators}
-        cost_dict.update({type(v): 2 for v in variables_and_constants})
-        # weight terms likely to be in the magnet2 expressions: skew, dp, divide, times, length
-        for term in [Skew, Inner, Divide, Times, Length]:
+        cost_dict = {op: 500 for op in operators}
+        cost_dict.update({type(v): 1 for v in variables_and_constants})
+        for term in [Inner, ScaleInverse, Times, Cross]:
             cost_dict[term] = 1
 
-    for expression in weighted_bottom_up_generator(20, operators, constants, inputs, cost_dict=cost_dict):
+    for expression in weighted_bottom_up_generator(20, operators, constants,
+                                                  inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
         if expression.return_type == "matrix" and len(matrix_basis) < size:
@@ -490,18 +506,6 @@ def construct_basis(reals, vectors, size, dimension=3, weighted=False):
     basis_cache[basis_key] = (vector_basis, matrix_basis)
     return basis_cache[basis_key]
 
+
 if __name__ == '__main__':
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=10000, weighted=False)
-
-    print('basis constructed')
-    for i in range(len(vector_basis)):
-        print(vector_basis[i].pretty_print())
-        if vector_basis[i].pretty_print() == '(/ (X V1 (hat R)) (X R (dp R R))':
-            print(f"found it, {i}")
-            break
-
-    for i in range(len(vector_basis)):
-        print(matrix_basis[i].pretty_print())
-        if matrix_basis[i].pretty_print() == '(/ (X V1 (hat R)) (X R (dp R R))':
-            print(f"found it, {i}")
-            break
+    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=40000, weighted=True)
