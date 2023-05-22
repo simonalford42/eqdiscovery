@@ -1,7 +1,6 @@
 import itertools
 import random
 import numpy as np
-import math
 
 
 class Expression():
@@ -362,6 +361,7 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
 
     enumerated_expressions = {}
     def record_new_expression(expression, cost):
+        # print(expression.pretty_print())
         """Returns True iff the semantics of this expression has never been seen before"""
         nonlocal inputs, observed_values
 
@@ -389,7 +389,6 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
 
         if v1 == goal_v1 or v2 == goal_v1:
             print(f'found a match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
-            assert False
 
         # is this something we have not seen before?
         if v1 not in observed_values and v2 not in observed_values:
@@ -456,9 +455,13 @@ def infer_variables(inputs):
         if isinstance(variable_value, float): return Real(variable_name)
         if isinstance(variable_value, np.ndarray): return Vector(variable_name)
 
-    return list({make_variable(variable_name, variable_value)
+    variables = list({make_variable(variable_name, variable_value)
                       for input in inputs
                       for variable_name, variable_value in input.items() })
+    # since inputs are randomly generated, this ensures a consistent order
+    # so that the synthesis order is deterministic
+    variables = sorted(variables, key=lambda v: v.name)
+    return variables
 
 
 basis_cache = {}
@@ -478,18 +481,17 @@ def construct_basis(reals, vectors, size, dimension=3, weighted=False):
         return d
 
     inputs = [random_input()
-              for _ in range(10) ]
+              for _ in range(20) ]
     vector_basis = []
     matrix_basis = []
 
     variables = infer_variables(inputs)
-    print(f'{variables=}')
     constants = []
     variables_and_constants = variables + constants
 
     cost_dict = None
     if weighted:
-        cost_dict = {op: 500 for op in operators}
+        cost_dict = {op: 5 for op in operators}
         cost_dict.update({type(v): 1 for v in variables_and_constants})
         for term in [Inner, ScaleInverse, Times, Cross]:
             cost_dict[term] = 2
@@ -509,4 +511,7 @@ def construct_basis(reals, vectors, size, dimension=3, weighted=False):
 
 
 if __name__ == '__main__':
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=40000, weighted=True)
+    np.random.seed(0)
+    random.seed(0)
+    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=500, weighted=True)
+    print(len(vector_basis), len(matrix_basis))
