@@ -54,10 +54,11 @@ def arrays_proportional(x, y, tolerance=0.02):
 
 
 class AccelerationLearner():
-    def __init__(self, dimension, alpha, penalty, basis, weighted=False):
+    def __init__(self, dimension, alpha, penalty, basis, cutoff, cost_dict=None):
         self.alpha = alpha
         self.dimension = dimension
         self.penalty = penalty
+        self.cutoff = cutoff
 
         if isinstance(basis, int):
             """
@@ -67,7 +68,7 @@ class AccelerationLearner():
             self.basis = {}
             # construct basis functions both for interaction forces and individual particle forces
             self.basis[(2,1)], self.basis[(2,2)] = construct_basis([], ["R", "V1", "V2"], basis,
-                                                                   dimension=dimension, weighted=weighted)
+                                                                   dimension=dimension, cost_dict=cost_dict)
 
             # remove any interaction forces which do not involve both particles
             self.basis[(2,1)] = [e
@@ -81,7 +82,7 @@ class AccelerationLearner():
                                  ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
 
             self.basis[(1,1)], self.basis[(1,2)]  = construct_basis([], ["V"], basis,
-                                                                    dimension=dimension, weighted=weighted)
+                                                                    dimension=dimension, cost_dict=cost_dict)
 
             self.show_basis_function_counts()
         else:
@@ -147,6 +148,8 @@ class AccelerationLearner():
                                      if n_particles == 2
                                      for b in bs}
 
+        valuation_dictionary2 = {}
+
         for t in tqdm(range(T)):
             for i in range(N):
                 for j in range(N):
@@ -164,21 +167,52 @@ class AccelerationLearner():
                             if b in problematic_functions: continue
 
                             value = b.evaluate(input_dictionary)
+
                             if "nan" in str(value) or "inf" in str(value):
                                 problematic_functions.add(b)
                             else:
                                 valuation_dictionary[(b,t,i,j)] = value
+                                if b in valuation_dictionary2:
+                                    valuation_dictionary2[b].append(value)
+                                else:
+                                    valuation_dictionary2[b] = [value]
 
-        print("Removing ", len(problematic_functions), "/", self.basis_size,
+
+        all_zero_functions = set()
+        too_small_functions = set()
+        for b in valuation_dictionary2:
+            max_val = max([abs(v).max() for v in valuation_dictionary2[b]])
+            if b.pretty_print() in ['(skew (/ (/ V1 R^3) R^4))',
+                                     '(skew (/ (/ V1 R^3) R^3))',
+                                     '(op (X R V1) (/ R R^4))',
+                                     '(skew (/ V1 R^3))',
+                                     '(skew (/ V1 R^4))']:
+                print(b.pretty_print(), max_val)
+
+            if max_val == 0:
+                all_zero_functions.add(b)
+            elif max_val <= 1E-4:
+                too_small_functions.add(b)
+
+        print("removing ", len(problematic_functions), "/", self.basis_size,
               "basis functions that cause numerical instability")
-        #print({pf.pretty_print() for pf in problematic_functions })
+
+        print("removing ", len(too_small_functions), "/", self.basis_size,
+              "basis functions that are too small")
+
+        print("removing ", len(all_zero_functions), "/", self.basis_size,
+              "basis functions that are all zeros")
+
+        bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
 
         valuation_dictionary = {(b, *rest): value
                                 for (b, *rest), value in valuation_dictionary.items()
-                                if b not in problematic_functions}
+                                if b not in bad_functions}
 
-        self.basis = {b_key: [b for b in b_value if b not in problematic_functions ]
+        self.basis = {b_key: [b for b in b_value if b not in bad_functions]
                       for b_key, b_value in self.basis.items()}
+
+        print('New basis size: ', self.basis_size)
 
         # Now let's figure out if any of the basis functions are just linear rescalings of others
         # Compute the signature of each basis function, which is the vector of its valuations
@@ -207,11 +241,11 @@ class AccelerationLearner():
                     for b2 in self.basis[(n_particles, n_indices)][:n]:
                         if arrays_proportional(signature[b1], signature[b2]):
                             problematic_functions.add(b1)
-                            print(b1.pretty_print(), "made redundant by", b2.pretty_print())
+                            # print(b1.pretty_print(), "made redundant by", b2.pretty_print())
                             break
 
         print("Removing ", len(problematic_functions), "/", self.basis_size,
-              "basis functions that are redundant:")
+              "basis functions that are redundant")
         #print({pf.pretty_print() for pf in problematic_functions })
 
 
@@ -276,16 +310,19 @@ class AccelerationLearner():
         feature_names = list(sorted({ fn for fd in X for fn in fd.keys() }))
 
         X_matrix = np.array([ [ fd.get(f, 0.) for f in feature_names ] for fd in X ])
+        print(f'{X_matrix.shape=}')
         Y = np.array(Y)
 
         feature_cost = [ self.penalty*int(basis_function.return_type == "matrix") + 1
                          for (basis_function, *rest) in feature_names ]
+        print('disabled feature cost')
+        feature_cost = None
 
         coefficients = sparse_regression(X_matrix, Y, alpha=self.alpha, feature_cost=feature_cost)
 
         model = [(coefficients[feature_index], feature_name)
                  for feature_index, feature_name in enumerate(feature_names)
-                 if abs(coefficients[feature_index]) > 1e-4
+                 if abs(coefficients[feature_index]) > self.cutoff
         ]
 
         for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
@@ -298,7 +335,7 @@ class AccelerationLearner():
             print(f"Basis shrunk. Reestimating with smaller basis of {len(surviving_functions)} functions")
             new_basis = {b_key: [b for b in b_value if b in surviving_functions ]
                          for b_key, b_value in self.basis.items()}
-            return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis).fit(x, v, a)
+            return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis, self.cutoff).fit(x, v, a)
         else:
             print(" ==  == acceleration learning has converged, reestimating coefficients ==  == ")
 
@@ -309,6 +346,7 @@ class AccelerationLearner():
 
             for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
                 print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
+                # print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices, "\t", expr_structure(basis_expression))
 
             # now we convert to acceleration laws
             self.acceleration_laws = []
@@ -358,7 +396,8 @@ if __name__ == '__main__':
     parser.add_argument("--basis", "-b", default=200, type=int, help="number of basis functions")
     parser.add_argument("--latent", "-l", default=0, type=int, help="number of latent parameters to associate with each particle (in addition to its mass) ")
     parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
-    parser.add_argument("--weighted", "-P", default=False, action="store_true", help="use weighted enumeration for basis functions")
+    parser.add_argument("--refit", "-r", action="store_true", help="refit with learned pcfg")
+    parser.add_argument("--cutoff", "-c", default=1E-4, type=int, help="remove functions with coefficients below this value during sparse regression")
     arguments = parser.parse_args()
 
     for name, callback in [
@@ -389,8 +428,29 @@ if __name__ == '__main__':
                                  arguments.alpha,
                                  arguments.penalty,
                                  arguments.basis,
-                                 arguments.weighted)
+                                 arguments.cutoff)
         al = al.fit(x, v, a)
+
+        if arguments.refit:
+            basis_functions = list({(bf, len({i,j}))
+                                    for terms in al.acceleration_laws
+                                    for bf, i, j, *rest in terms })
+
+            operators = get_operators(dimension)
+            cost_dict = fit_pcfg([bf for bf, _ in basis_functions], operators)
+
+            for op in cost_dict:
+                print(f'{op}\t{op.return_type}\t\t{cost_dict[op]}')
+
+            print('repeating with new pcfg')
+
+            al = AccelerationLearner(dimension,
+                                     arguments.alpha,
+                                     arguments.penalty,
+                                     arguments.basis,
+                                     arguments.cutoff,
+                                     cost_dict)
+            al = al.fit(x, v, a)
 
         # fl = ForceLearner(0, arguments.lines)
         # fl.fit(al.acceleration_laws)

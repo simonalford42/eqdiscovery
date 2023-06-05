@@ -1,6 +1,7 @@
 import itertools
 import random
 import numpy as np
+import math
 
 
 class Expression():
@@ -68,6 +69,7 @@ class Vector(Expression):
         return environment[self.name]
 
     def arguments(self): return []
+
 
 class Plus(Expression):
     return_type = "real"
@@ -148,7 +150,7 @@ class Reciprocal(Expression):
         x = self.x.evaluate(environment)
         return 1/x
 
-    def arguments(self): return [self.x, self.y]
+    def arguments(self): return [self.x]
 
 class Inner(Expression):
     return_type = "real"
@@ -171,6 +173,51 @@ class Inner(Expression):
         return (x * y).sum(-1).unsqueeze(-1)
 
     def arguments(self): return [self.x, self.y]
+
+
+class NormCubed(Expression):
+    return_type = "real"
+    argument_types = ["vector"]
+
+    def __init__(self, x):
+        self.x = x
+
+    def __str__(self):
+        return f"NormCubed({self.x})"
+
+    def pretty_print(self):
+        return f"{self.x.pretty_print()}^3"
+
+    def evaluate(self, environment):
+        x = self.x.evaluate(environment)
+        if isinstance(x, np.ndarray):
+            return (np.sum(x * x, -1))**(3/2)
+        return ((x * x).sum(-1).unsqueeze(-1))**(3/2)
+
+    def arguments(self): return [self.x]
+
+
+class NormForth(Expression):
+    return_type = "real"
+    argument_types = ["vector"]
+
+    def __init__(self, x):
+        self.x = x
+
+    def __str__(self):
+        return f"NormForth({self.x})"
+
+    def pretty_print(self):
+        return f"{self.x.pretty_print()}^4"
+
+    def evaluate(self, environment):
+        x = self.x.evaluate(environment)
+        if isinstance(x, np.ndarray):
+            return (np.sum(x * x, -1))**(2)
+        return ((x * x).sum(-1).unsqueeze(-1))**(2)
+
+    def arguments(self): return [self.x]
+
 
 class Cross(Expression):
     return_type = "vector"
@@ -330,6 +377,20 @@ class Hat(Expression):
     def arguments(self): return [self.x]
 
 
+def expr_structure(expr):
+    '''
+    Helps disambiguate some of the pretty print structures
+    '''
+    if type(expr) == Vector or type(expr) == Real:
+        return type(expr).__name__ + '(' + str(expr.name) + ')'
+
+    # print class name, parenthesis, and then recurse on the argumentsj
+    return (type(expr).__name__
+            + '('
+            + ', '.join([expr_structure(arg) for arg in expr.arguments()])
+            + ')')
+
+
 def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_dict=None):
     """
     cost_bound: int. an upper bound on the cost of expression
@@ -352,19 +413,31 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
     # a mapping from a tuple of (type, expression_size) to all of the possible values that can be computed of that type using an expression of that size
     observed_values = set()
 
-    R = Vector('R')
-    V1 = Vector('V1')
-    goal_expression = Divide(Cross(R, V1), Times(Inner(R, R), Inner(R, R)))
-    goal_valuation = np.array([goal_expression.evaluate(input) for input in inputs])
-    goal_valuation = goal_valuation / np.linalg.norm(goal_valuation)
-    goal_v1 = np.around(goal_valuation*100, decimals=5).tobytes()
+    check_goal = 'V1' in inputs[0]
+    if check_goal:
+        R = Vector('R')
+        V1 = Vector('V1')
+
+        # goal1_expr = Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R))))
+        # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), Times(Inner(R, R), Inner(R, R)))
+        goal1_expr = Skew(ScaleInverse(V1, NormCubed(R)))
+        goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormForth(R))
+
+        goal1_val = np.array([goal1_expr.evaluate(input) for input in inputs])
+        goal1_val = goal1_val / np.linalg.norm(goal1_val)
+        goal1_v1 = np.around(goal1_val*100, decimals=5).tobytes()
+
+        goal2_val = np.array([goal2_expr.evaluate(input) for input in inputs])
+        goal2_val = goal2_val / np.linalg.norm(goal2_val)
+        goal2_v1 = np.around(goal2_val*100, decimals=5).tobytes()
+
 
     enumerated_expressions = {}
     def record_new_expression(expression, cost):
-        # print(expression.pretty_print())
         """Returns True iff the semantics of this expression has never been seen before"""
         nonlocal inputs, observed_values
 
+        # print(expression.pretty_print(), '\t', expr_structure(expression))
         valuation = np.array([expression.evaluate(input) for input in inputs])
 
         # discard all zeros
@@ -379,16 +452,16 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
         # we only care about the direction, not rescaling or sign changes
         valuation = valuation / np.linalg.norm(valuation)
 
-        # if (expression.pretty_print().startswith('(/ (X R V1)')
-            # or expression.pretty_print().startswith('(/ (X V1 R)')):
-            # print(expression.pretty_print())
-
-        # things we hash
+        # things we hash.tobytes(
         v1 = np.around(valuation*100, decimals=5).tobytes()
         v2 = np.around(-valuation*100, decimals=5).tobytes()
 
-        if v1 == goal_v1 or v2 == goal_v1:
-            print(f'found a match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
+        if check_goal:
+            if v1 == goal1_v1 or v2 == goal1_v1:
+                print(f'found a term 1 match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
+                print(expr_structure(expression))
+            if v1 == goal2_v1 or v2 == goal2_v1:
+                print(f'found a term 2 match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
 
         # is this something we have not seen before?
         if v1 not in observed_values and v2 not in observed_values:
@@ -405,7 +478,7 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
 
         return False
 
-    lvl = 1
+    lvl = 0
     while True:
         for terminal in variables_and_constants:
             if cost_dict[type(terminal)] == lvl:
@@ -450,6 +523,54 @@ def integer_partitions(target_value, number_of_arguments):
              for x2s in integer_partitions(target_value - x1, number_of_arguments - 1) ]
 
 
+def fit_pcfg(expressions, operators):
+    '''
+     Returns a cost dict for the PCFG that is a good fit for the given expressions.
+     Infers variables from those present in expressions.
+    '''
+
+    def get_variables(expression):
+        if isinstance(expression, Vector) or isinstance(expression, Real):
+            return {type(expression)}
+        else:
+            return set().union(*[get_variables(arg) for arg in expression.arguments()])
+
+    variables = set().union(*[get_variables(expr) for expr in expressions])
+    vars_and_ops = list(variables) + operators
+
+    # the "counts" are the number of times that expression occurs
+    # some expressions might occur more than others because that type is more common or something.
+    # as a start, normalize by the number of times expressions of that type occur
+    pseudocount = 1
+    counts = {op: pseudocount for op in vars_and_ops}
+    type_counts = {op.return_type: 0 for op in vars_and_ops}
+
+    def calc_counts(expressions):
+        for expr in expressions:
+            counts[type(expr)] += 1
+            calc_counts(expr.arguments())
+
+    def calc_type_counts(expressions):
+        for expr in expressions:
+            type_counts[expr.return_type] += 1
+            calc_type_counts(expr.arguments())
+
+    calc_counts(expressions)
+    calc_type_counts(expressions)
+
+    # probability = count / type_count
+    # cost = rounded negative log of probability
+    cost_dict = {op: -math.log(count / type_counts[op.return_type]) for op, count in counts.items()}
+    # directly rounding is too coarse, so instead round to nearest 1/10th.
+    # then multiply by 10 so costs are still integers
+    cost_dict = {op: round(cost * 10) for op, cost in cost_dict.items()}
+
+    # don't allow cost zero... add one to each
+    cost_dict = {op: cost + 1 for op, cost in cost_dict.items()}
+
+    return cost_dict
+
+
 def infer_variables(inputs):
     def make_variable(variable_name, variable_value):
         if isinstance(variable_value, float): return Real(variable_name)
@@ -463,14 +584,41 @@ def infer_variables(inputs):
     variables = sorted(variables, key=lambda v: v.name)
     return variables
 
+    # goal1_expr = Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R))))
+    # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), Times(Inner(R, R), Inner(R, R)))
+
+    # goal1_expr = Skew(ScaleInverse(V1, NormCubed(R))
+    # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormForth(R))
+
+def get_operators(dimension):
+
+    operators = [
+        # Hat,
+        Outer,
+        # Inner,
+        # Divide,
+        # Times,
+        # Scale,
+        ScaleInverse,
+        # Length,
+
+        NormCubed,
+        NormForth,
+        # Reciprocal,
+    ]
+    if dimension == 3: operators.extend([
+        Skew,
+        Cross,
+    ])
+    return operators
 
 basis_cache = {}
-def construct_basis(reals, vectors, size, dimension=3, weighted=False):
-    basis_key = (tuple(reals), tuple(vectors), size, dimension, weighted)
-    if basis_key in basis_cache: return basis_cache[basis_key]
+def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
+    basis_key = (tuple(reals), tuple(vectors), size, dimension)
+    if cost_dict is None and basis_key in basis_cache: return basis_cache[basis_key]
 
-    operators = [Hat, Outer, Inner, Divide, Times, Scale, Reciprocal, ScaleInverse, Length]
-    if dimension == 3: operators.extend([Skew, Cross])
+
+    operators = get_operators(dimension)
 
     def random_input():
         d = {}
@@ -480,8 +628,7 @@ def construct_basis(reals, vectors, size, dimension=3, weighted=False):
             d[nm] = np.random.random(dimension)*10-5
         return d
 
-    inputs = [random_input()
-              for _ in range(20) ]
+    inputs = [random_input() for _ in range(10) ]
     vector_basis = []
     matrix_basis = []
 
@@ -489,13 +636,21 @@ def construct_basis(reals, vectors, size, dimension=3, weighted=False):
     constants = []
     variables_and_constants = variables + constants
 
-    cost_dict = None
-    if weighted:
-        cost_dict = {op: 5 for op in operators}
-        cost_dict.update({type(v): 1 for v in variables_and_constants})
-        for term in [Inner, ScaleInverse, Times, Cross]:
-            cost_dict[term] = 2
-        cost_dict[Inner] = 1
+    if any(v.name == 'V1' for v in variables):
+        V1 = [v for v in variables if v.name == 'V1'][0]
+        R = [r for r in variables if r.name == 'R'][0]
+
+        handcrafted_exprs = [
+            # Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R)))),
+            # Outer(ScaleInverse(Cross(V1, R), Times(Inner(R, R), Inner(R, R))), R),
+        ]
+
+        for expression in handcrafted_exprs:
+            print('adding handcrafted expr to enumerated exprs: ', expression.pretty_print())
+            if expression.return_type == "vector":
+                vector_basis.append(expression)
+            if expression.return_type == "matrix":
+                matrix_basis.append(expression)
 
     for expression in weighted_bottom_up_generator(20, operators, constants,
                                                   inputs, cost_dict=cost_dict):
@@ -513,5 +668,5 @@ def construct_basis(reals, vectors, size, dimension=3, weighted=False):
 if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=500, weighted=True)
+    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=2000)
     print(len(vector_basis), len(matrix_basis))
