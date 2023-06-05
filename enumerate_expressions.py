@@ -219,6 +219,28 @@ class NormForth(Expression):
     def arguments(self): return [self.x]
 
 
+class NormFifth(Expression):
+    return_type = "real"
+    argument_types = ["vector"]
+
+    def __init__(self, x):
+        self.x = x
+
+    def __str__(self):
+        return f"NormFifth({self.x})"
+
+    def pretty_print(self):
+        return f"{self.x.pretty_print()}^5"
+
+    def evaluate(self, environment):
+        x = self.x.evaluate(environment)
+        if isinstance(x, np.ndarray):
+            return (np.sum(x * x, -1))**(5/2)
+        return ((x * x).sum(-1).unsqueeze(-1))**(5/2)
+
+    def arguments(self): return [self.x]
+
+
 class Cross(Expression):
     return_type = "vector"
     argument_types = ["vector","vector"]
@@ -422,14 +444,12 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
         # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), Times(Inner(R, R), Inner(R, R)))
         goal1_expr = Skew(ScaleInverse(V1, NormCubed(R)))
         goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormForth(R))
+        goal3_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
+        goal_exprs = [goal1_expr, goal2_expr, goal3_expr]
 
-        goal1_val = np.array([goal1_expr.evaluate(input) for input in inputs])
-        goal1_val = goal1_val / np.linalg.norm(goal1_val)
-        goal1_v1 = np.around(goal1_val*100, decimals=5).tobytes()
-
-        goal2_val = np.array([goal2_expr.evaluate(input) for input in inputs])
-        goal2_val = goal2_val / np.linalg.norm(goal2_val)
-        goal2_v1 = np.around(goal2_val*100, decimals=5).tobytes()
+        goal_vals = [np.array([goal_expr.evaluate(input) for input in inputs]) for goal_expr in goal_exprs]
+        goal_vals = [goal_val / np.linalg.norm(goal_val) for goal_val in goal_vals]
+        goal_v1s = [np.around(goal_val*100, decimals=5).tobytes() for goal_val in goal_vals]
 
 
     enumerated_expressions = {}
@@ -457,11 +477,10 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
         v2 = np.around(-valuation*100, decimals=5).tobytes()
 
         if check_goal:
-            if v1 == goal1_v1 or v2 == goal1_v1:
-                print(f'found a term 1 match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
-                print(expr_structure(expression))
-            if v1 == goal2_v1 or v2 == goal2_v1:
-                print(f'found a term 2 match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
+            for i, goal_v1 in enumerate(goal_v1s):
+                if v1 == goal_v1 or v2 == goal_v1:
+                    print(f'found a term {i+1} match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
+                    print(expr_structure(expression))
 
         # is this something we have not seen before?
         if v1 not in observed_values and v2 not in observed_values:
@@ -604,6 +623,7 @@ def get_operators(dimension):
 
         NormCubed,
         NormForth,
+        NormFifth,
         # Reciprocal,
     ]
     if dimension == 3: operators.extend([
