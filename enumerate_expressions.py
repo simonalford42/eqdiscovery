@@ -484,15 +484,15 @@ def weighted_bottom_up_generator(operators, constants, inputs, cost_dict=None):
         v1 = np.around(valuation*100, decimals=5).tobytes()
         v2 = np.around(-valuation*100, decimals=5).tobytes()
 
-        if check_goal:
-            for i, goal_v1 in enumerate(goal_v1s):
-                if v1 == goal_v1 or v2 == goal_v1:
-                    print(f'found a term {i+1} match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
-                    print(expr_structure(expression))
-
         # is this something we have not seen before?
         if v1 not in observed_values and v2 not in observed_values:
             observed_values.add(v1)
+
+            if check_goal:
+                for i, goal_v1 in enumerate(goal_v1s):
+                    if v1 == goal_v1 or v2 == goal_v1:
+                        print(f'found a term {i+1} match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
+                        print(expr_structure(expression))
 
             # we have some new behavior
             key = (expression.__class__.return_type, cost)
@@ -524,8 +524,8 @@ def weighted_bottom_up_generator(operators, constants, inputs, cost_dict=None):
                         # subtrees when evaluating later
                         new_expression = operator(*[e for e,v in arguments])
                         if record_new_expression(new_expression, lvl):
-                            if len(observed_values) % 1000 == 0:
-                                print(f'{len(observed_values)} expressions')
+                            # if len(observed_values) % 1000 == 0:
+                                # print(f'{len(observed_values)} expressions')
                             yield new_expression
 
         lvl += 1
@@ -634,7 +634,7 @@ def get_operators(dimension=3):
         ScaleInverse,
         Length,
 
-        # NormCubed,
+        NormCubed,
         # NormForth,
         # NormFifth,
         # Reciprocal,
@@ -689,13 +689,13 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
                                                   inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
-            # if len(vector_basis) % 1000 == 0:
-                # print(f'{len(vector_basis)} vector basis terms')
+            if len(vector_basis) % 1000 == 0:
+                print(f'{len(vector_basis)} vector basis terms')
 
         if expression.return_type == "matrix" and len(matrix_basis) < size:
             matrix_basis.append(expression)
-            # if len(matrix_basis) % 1000 == 0:
-                # print(f'{len(matrix_basis)} matrix basis terms')
+            if len(matrix_basis) % 1000 == 0:
+                print(f'{len(matrix_basis)} matrix basis terms')
 
         if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
@@ -708,7 +708,7 @@ def dipole_cost_dict():
 
     R = Vector('R')
     V1 = Vector('V1')
-    p = ScaleInverse(Outer(Cross(V1, R), Hat(R)), Times(Inner(R, R), Inner(R, R)))
+    p = ScaleInverse(Outer(Cross(V1, Hat(R)), Hat(R)), NormCubed(R))
 
     exprs = [p for _ in range(10)]
     cost_dict = fit_pcfg(exprs, get_operators())
@@ -721,5 +721,6 @@ if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
 
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=6000, cost_dict=dipole_cost_dict())
+    # vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=900, cost_dict=dipole_cost_dict())
+    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=20000, cost_dict=None)
     print(len(vector_basis), len(matrix_basis))

@@ -148,6 +148,8 @@ class AccelerationLearner():
                                      if n_particles == 2
                                      for b in bs}
 
+        valuation_dictionary2 = {}
+
         for t in tqdm(range(T)):
             for i in range(N):
                 for j in range(N):
@@ -170,17 +172,49 @@ class AccelerationLearner():
                                 problematic_functions.add(b)
                             else:
                                 valuation_dictionary[(b,t,i,j)] = value
+                                if b in valuation_dictionary2:
+                                    valuation_dictionary2[b].append(value)
+                                else:
+                                    valuation_dictionary2[b] = [value]
 
+
+        all_zero_functions = set()
+        too_small_functions = set()
+        for b in valuation_dictionary2:
+            max_val = max([abs(v).max() for v in valuation_dictionary2[b]])
+            if b.pretty_print() in ['(skew (/ (/ V1 R^3) R^4))',
+                                     '(skew (/ (/ V1 R^3) R^3))',
+                                     '(op (X R V1) (/ R R^4))',
+                                     '(skew (/ V1 R^3))',
+                                     '(skew (/ V1 R^4))']:
+                print(b.pretty_print(), max_val)
+
+            if max_val == 0:
+                all_zero_functions.add(b)
+            elif max_val <= 1E-6:
+                too_small_functions.add(b)
 
         print("removing ", len(problematic_functions), "/", self.basis_size,
               "basis functions that cause numerical instability")
 
+        print("removing ", len(too_small_functions), "/", self.basis_size,
+              "basis functions that are too small")
+
+        print("removing ", len(all_zero_functions), "/", self.basis_size,
+              "basis functions that are all zeros")
+
+        bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
+
         valuation_dictionary = {(b, *rest): value
                                 for (b, *rest), value in valuation_dictionary.items()
-                                if b not in problematic_functions}
+                                if b not in bad_functions}
 
-        self.basis = {b_key: [b for b in b_value if b not in problematic_functions]
+        self.basis = {b_key: [b for b in b_value if b not in bad_functions]
                       for b_key, b_value in self.basis.items()}
+        for b in bad_functions:
+            if b.pretty_print() in ['(skew (/ V1 (* (dp R R) (dp R (hat R)))))',
+                                     '(op (X R V1) (/ (hat R) (* (dp R R) (dp R R))))']:
+                print(b.pretty_print(), 'is a bad function :(')
 
         print('New basis size: ', self.basis_size)
 
@@ -398,8 +432,8 @@ if __name__ == '__main__':
                                  arguments.alpha,
                                  arguments.penalty,
                                  arguments.basis,
-                                 arguments.cutoff,
-                                 dipole_cost_dict())
+                                 arguments.cutoff)
+                                #  dipole_cost_dict())
         al = al.fit(x, v, a)
 
         if arguments.refit:
