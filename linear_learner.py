@@ -398,7 +398,8 @@ if __name__ == '__main__':
                                  arguments.alpha,
                                  arguments.penalty,
                                  arguments.basis,
-                                 arguments.cutoff)
+                                 arguments.cutoff,
+                                 dipole_cost_dict())
         al = al.fit(x, v, a)
 
         if arguments.refit:

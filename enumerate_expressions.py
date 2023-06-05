@@ -413,9 +413,8 @@ def expr_structure(expr):
             + ')')
 
 
-def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_dict=None):
+def weighted_bottom_up_generator(operators, constants, inputs, cost_dict=None):
     """
-    cost_bound: int. an upper bound on the cost of expression
     operators: list of classes, such as [Times, If, ...]
     constants: list of possible leaves in syntax tree, such as [Number(1)]. Variables can also be leaves, but these are automatically inferred from `input_outputs`
     inputs: list of environments (the input), such as [{'x': 5}, {'x': 1}]
@@ -430,6 +429,16 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
         cost_dict = {op: 1 for op in operators}
         cost_dict.update({type(v): 1 for v in variables_and_constants})
 
+    for op in operators:
+        if op not in cost_dict:
+            cost_dict[op] = 1
+            print(f"warning: no cost provided for {op}. using cost 1")
+
+    for v in variables_and_constants:
+        if type(v) not in cost_dict:
+            cost_dict[type(v)] = 1
+            print(f"warning: no cost provided for {v}. using cost 1")
+
     assert all(isinstance(cost, int) for cost in cost_dict.values()), 'costs must be integral'
 
     # a mapping from a tuple of (type, expression_size) to all of the possible values that can be computed of that type using an expression of that size
@@ -440,12 +449,11 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
         R = Vector('R')
         V1 = Vector('V1')
 
-        # goal1_expr = Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R))))
-        # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), Times(Inner(R, R), Inner(R, R)))
-        goal1_expr = Skew(ScaleInverse(V1, NormCubed(R)))
-        goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormForth(R))
-        goal3_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
-        goal_exprs = [goal1_expr, goal2_expr, goal3_expr]
+        goal1_expr = Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R))))
+        goal2_expr = ScaleInverse(Outer(Cross(V1, R), Hat(R)), Times(Inner(R, R), Inner(R, R)))
+        # goal1_expr = Skew(ScaleInverse(V1, NormCubed(R)))
+        # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
+        goal_exprs = [goal1_expr, goal2_expr]
 
         goal_vals = [np.array([goal_expr.evaluate(input) for input in inputs]) for goal_expr in goal_exprs]
         goal_vals = [goal_val / np.linalg.norm(goal_val) for goal_val in goal_vals]
@@ -521,9 +529,6 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
                             yield new_expression
 
         lvl += 1
-        if cost_bound and lvl > cost_bound:
-            break
-
 
 
 def integer_partitions(target_value, number_of_arguments):
@@ -542,10 +547,12 @@ def integer_partitions(target_value, number_of_arguments):
              for x2s in integer_partitions(target_value - x1, number_of_arguments - 1) ]
 
 
-def fit_pcfg(expressions, operators):
+def fit_pcfg(expressions, operators, pseudocount=1):
     '''
      Returns a cost dict for the PCFG that is a good fit for the given expressions.
      Infers variables from those present in expressions.
+
+     pseudocount is added to the count of each operator, to avoid zero probabilities.
     '''
 
     def get_variables(expression):
@@ -560,9 +567,12 @@ def fit_pcfg(expressions, operators):
     # the "counts" are the number of times that expression occurs
     # some expressions might occur more than others because that type is more common or something.
     # as a start, normalize by the number of times expressions of that type occur
-    pseudocount = 1
     counts = {op: pseudocount for op in vars_and_ops}
     type_counts = {op.return_type: 0 for op in vars_and_ops}
+
+    # add pseudocount to the denominator for each op of that type
+    for op in vars_and_ops:
+        type_counts[op.return_type] += pseudocount
 
     def calc_counts(expressions):
         for expr in expressions:
@@ -576,6 +586,9 @@ def fit_pcfg(expressions, operators):
 
     calc_counts(expressions)
     calc_type_counts(expressions)
+
+    # print(f'{counts=}')
+    # print(f'{type_counts=}')
 
     # probability = count / type_count
     # cost = rounded negative log of probability
@@ -604,26 +617,26 @@ def infer_variables(inputs):
     return variables
 
     # goal1_expr = Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R))))
-    # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), Times(Inner(R, R), Inner(R, R)))
+    # goal2_expr = ScaleInverse(Outer(Cross(V1, R), Hat(R)), Times(Inner(R, R), Inner(R, R)))
 
     # goal1_expr = Skew(ScaleInverse(V1, NormCubed(R))
-    # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormForth(R))
+    # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
 
-def get_operators(dimension):
+def get_operators(dimension=3):
 
     operators = [
-        # Hat,
+        Hat,
         Outer,
-        # Inner,
+        Inner,
         # Divide,
-        # Times,
-        # Scale,
+        Times,
+        Scale,
         ScaleInverse,
-        # Length,
+        Length,
 
-        NormCubed,
-        NormForth,
-        NormFifth,
+        # NormCubed,
+        # NormForth,
+        # NormFifth,
         # Reciprocal,
     ]
     if dimension == 3: operators.extend([
@@ -662,7 +675,7 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
 
         handcrafted_exprs = [
             # Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R)))),
-            # Outer(ScaleInverse(Cross(V1, R), Times(Inner(R, R), Inner(R, R))), R),
+            # Outer(ScaleInverse(Cross(V1, Hat(R)), Times(Inner(R, R), Inner(R, R))), R),
         ]
 
         for expression in handcrafted_exprs:
@@ -672,12 +685,17 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
             if expression.return_type == "matrix":
                 matrix_basis.append(expression)
 
-    for expression in weighted_bottom_up_generator(20, operators, constants,
+    for expression in weighted_bottom_up_generator(operators, constants,
                                                   inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
+            # if len(vector_basis) % 1000 == 0:
+                # print(f'{len(vector_basis)} vector basis terms')
+
         if expression.return_type == "matrix" and len(matrix_basis) < size:
             matrix_basis.append(expression)
+            # if len(matrix_basis) % 1000 == 0:
+                # print(f'{len(matrix_basis)} matrix basis terms')
 
         if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
@@ -685,8 +703,23 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
     return basis_cache[basis_key]
 
 
+def dipole_cost_dict():
+    cost_dict = {op: 100 for op in get_operators()}
+
+    R = Vector('R')
+    V1 = Vector('V1')
+    p = ScaleInverse(Outer(Cross(V1, R), Hat(R)), Times(Inner(R, R), Inner(R, R)))
+
+    exprs = [p for _ in range(10)]
+    cost_dict = fit_pcfg(exprs, get_operators())
+    # for op in cost_dict:
+        # print(f'{op}\t{op.return_type}\t\t{cost_dict[op]}')
+
+    return cost_dict
+
 if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=2000)
+
+    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=6000, cost_dict=dipole_cost_dict())
     print(len(vector_basis), len(matrix_basis))
