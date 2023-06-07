@@ -26,7 +26,6 @@ def sparse_regression(X, y, alpha=1e-3, feature_cost=None):
     X = scaler.transform(X)
 
     y_scale = np.mean(y*y)**0.5
-    #print("y_scale", y_scale)
     y = y/y_scale
 
     if alpha > 0:
@@ -59,6 +58,9 @@ class AccelerationLearner():
         self.dimension = dimension
         self.penalty = penalty
         self.cutoff = cutoff
+
+        for op in get_operators(dimension):
+            print('\t', op)
 
         if isinstance(basis, int):
             """
@@ -142,6 +144,11 @@ class AccelerationLearner():
 
 
         problematic_functions = set() # these are features that give nan/infs, or are otherwise invalid
+        for basis_fns in self.basis.values():
+            for b in basis_fns:
+                if b.pretty_print() in GOAL_EXPRS:
+                    print('Goal expression in initial basis:', b.pretty_print())
+
         if N == 1:
             problematic_functions = {b
                                      for (n_particles, n_indices), bs in self.basis.items()
@@ -182,12 +189,6 @@ class AccelerationLearner():
         too_small_functions = set()
         for b in valuation_dictionary2:
             max_val = max([abs(v).max() for v in valuation_dictionary2[b]])
-            if b.pretty_print() in ['(skew (/ (/ V1 R^3) R^4))',
-                                     '(skew (/ (/ V1 R^3) R^3))',
-                                     '(op (X R V1) (/ R R^4))',
-                                     '(skew (/ V1 R^3))',
-                                     '(skew (/ V1 R^4))']:
-                print(b.pretty_print(), max_val)
 
             if max_val == 0:
                 all_zero_functions.add(b)
@@ -204,6 +205,11 @@ class AccelerationLearner():
               "basis functions that are all zeros")
 
         bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
+        # bad_functions = problematic_functions
+        for b in bad_functions:
+            if b.pretty_print() in GOAL_EXPRS:
+                print('UH OH: goal expression is a bad function:', b.pretty_print())
+                assert False
 
         valuation_dictionary = {(b, *rest): value
                                 for (b, *rest), value in valuation_dictionary.items()
@@ -211,10 +217,10 @@ class AccelerationLearner():
 
         self.basis = {b_key: [b for b in b_value if b not in bad_functions]
                       for b_key, b_value in self.basis.items()}
-        for b in bad_functions:
-            if b.pretty_print() in ['(skew (/ V1 (* (dp R R) (dp R (hat R)))))',
-                                     '(op (X R V1) (/ (hat R) (* (dp R R) (dp R R))))']:
-                print(b.pretty_print(), 'is a bad function :(')
+        for basis_fns in self.basis.values():
+            for b in basis_fns:
+                if b.pretty_print() in GOAL_EXPRS:
+                    print('Goal expression still in basis:', b.pretty_print())
 
         print('New basis size: ', self.basis_size)
 
@@ -314,7 +320,6 @@ class AccelerationLearner():
         feature_names = list(sorted({ fn for fd in X for fn in fd.keys() }))
 
         X_matrix = np.array([ [ fd.get(f, 0.) for f in feature_names ] for fd in X ])
-        print(f'{X_matrix.shape=}')
         Y = np.array(Y)
 
         feature_cost = [ self.penalty*int(basis_function.return_type == "matrix") + 1
@@ -391,7 +396,7 @@ if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser(description = "")
-    parser.add_argument("--simulation", "-s")
+    parser.add_argument("--simulation", "-s", default='magnet2')
     parser.add_argument("--alpha", "-a", default=1e-3, type=float, help="controls sparsity")
     parser.add_argument("--embed", "-e", default=False, action="store_true", help="embed in 3d")
     parser.add_argument("--penalty", "-p", default=10, type=float,
@@ -402,6 +407,7 @@ if __name__ == '__main__':
     parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
     parser.add_argument("--refit", "-r", action="store_true", help="refit with learned pcfg")
     parser.add_argument("--cutoff", "-c", default=1E-4, type=int, help="remove functions with coefficients below this value during sparse regression")
+    parser.add_argument("--pcfg", action="store_true", help="Use pcfg for enumerating basis functions")
     arguments = parser.parse_args()
 
     for name, callback in [
@@ -432,8 +438,8 @@ if __name__ == '__main__':
                                  arguments.alpha,
                                  arguments.penalty,
                                  arguments.basis,
-                                 arguments.cutoff)
-                                #  dipole_cost_dict())
+                                 arguments.cutoff,
+                                 dipole_cost_dict(get_operators()) if arguments.pcfg else None)
         al = al.fit(x, v, a)
 
         if arguments.refit:

@@ -133,25 +133,6 @@ class Divide(Expression):
     def arguments(self): return [self.x, self.y]
 
 
-class Reciprocal(Expression):
-    return_type = "real"
-    argument_types = ["real"]
-
-    def __init__(self, x):
-        self.x = x
-
-    def __str__(self):
-        return f"Reciprocal({self.x})"
-
-    def pretty_print(self):
-        return f"(1/ {self.x.pretty_print()})"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        return 1/x
-
-    def arguments(self): return [self.x]
-
 class Inner(Expression):
     return_type = "real"
     argument_types = ["vector","vector"]
@@ -413,6 +394,7 @@ def expr_structure(expr):
             + ')')
 
 
+GOAL_EXPRS = []
 def weighted_bottom_up_generator(operators, constants, inputs, cost_dict=None):
     """
     operators: list of classes, such as [Times, If, ...]
@@ -444,7 +426,8 @@ def weighted_bottom_up_generator(operators, constants, inputs, cost_dict=None):
     # a mapping from a tuple of (type, expression_size) to all of the possible values that can be computed of that type using an expression of that size
     observed_values = set()
 
-    check_goal = 'V1' in inputs[0]
+    dim = max([len(v) for v in inputs[0].values()])
+    check_goal = 'V1' in inputs[0] and dim == 3
     if check_goal:
         R = Vector('R')
         V1 = Vector('V1')
@@ -491,8 +474,9 @@ def weighted_bottom_up_generator(operators, constants, inputs, cost_dict=None):
             if check_goal:
                 for i, goal_v1 in enumerate(goal_v1s):
                     if v1 == goal_v1 or v2 == goal_v1:
-                        print(f'found a term {i+1} match: {expression.pretty_print()} in {len(observed_values)} steps with cost {cost}')
+                        print(f'found term {i+1}: {expression.pretty_print()}')
                         print(expr_structure(expression))
+                        GOAL_EXPRS.append(expression.pretty_print())
 
             # we have some new behavior
             key = (expression.__class__.return_type, cost)
@@ -625,20 +609,21 @@ def infer_variables(inputs):
 def get_operators(dimension=3):
 
     operators = [
-        Hat,
-        Outer,
-        Inner,
         # Divide,
-        Times,
-        Scale,
+        Outer,
         ScaleInverse,
-        Length,
 
-        NormCubed,
+        Hat,
+        Length,
+        Scale,
+        Inner,
+        Times,
+
+        # NormCubed,
         # NormForth,
         # NormFifth,
-        # Reciprocal,
     ]
+
     if dimension == 3: operators.extend([
         Skew,
         Cross,
@@ -649,7 +634,6 @@ basis_cache = {}
 def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
     basis_key = (tuple(reals), tuple(vectors), size, dimension)
     if cost_dict is None and basis_key in basis_cache: return basis_cache[basis_key]
-
 
     operators = get_operators(dimension)
 
@@ -662,6 +646,7 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
         return d
 
     inputs = [random_input() for _ in range(10) ]
+
     vector_basis = []
     matrix_basis = []
 
@@ -689,13 +674,14 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
                                                   inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
-            if len(vector_basis) % 1000 == 0:
-                print(f'{len(vector_basis)} vector basis terms')
 
         if expression.return_type == "matrix" and len(matrix_basis) < size:
             matrix_basis.append(expression)
-            if len(matrix_basis) % 1000 == 0:
-                print(f'{len(matrix_basis)} matrix basis terms')
+            # if len(GOAL_EXPRS) == 2:
+                # print(f'{len(matrix_basis)} matrix basis terms to find goals')
+                # print(f'{len(vector_basis)} vector basis terms')
+                # assert False
+
 
         if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
@@ -704,16 +690,51 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
 
 
 def dipole_cost_dict():
-    cost_dict = {op: 100 for op in get_operators()}
+    operators = get_operators()
+    cost_dict = {op: 100 for op in operators}
 
     R = Vector('R')
     V1 = Vector('V1')
-    p = ScaleInverse(Outer(Cross(V1, Hat(R)), Hat(R)), NormCubed(R))
 
-    exprs = [p for _ in range(10)]
-    cost_dict = fit_pcfg(exprs, get_operators())
-    # for op in cost_dict:
-        # print(f'{op}\t{op.return_type}\t\t{cost_dict[op]}')
+    # when we have norm forth and norm cubed
+    if NormFifth in operators and NormCubed in operators:
+        p1 = Skew(ScaleInverse(V1, NormCubed(R)))
+        p2 = Outer(Cross(R, V1), ScaleInverse(R, NormFifth(R)))
+    # when we only have norm fifth
+    elif NormFifth in operators and NormCubed not in operators and NormForth not in operators:
+        p1 = Skew(ScaleInverse(V1, Length(Scale(Inner(R, R), R))))
+        p2 = Outer(Cross(R, V1), ScaleInverse(R, NormFifth(R)))
+    # when we only have norm cubed
+    elif NormCubed in operators and NormFifth not in operators and NormForth not in operators:
+        p1 = Skew(ScaleInverse(V1, NormCubed(R)))
+        p2 = Outer(Cross(V1, Hat(R)), ScaleInverse(Hat(R), NormCubed(R)))
+    # when we have no norms
+    elif NormCubed not in operators and NormFifth not in operators and NormForth not in operators:
+        p1 = ScaleInverse(Outer(Cross(V1, R), Hat(R)), Times(Inner(R, R), Inner(R, R)))
+        # p2 = Skew(ScaleInverse(V1, Length(Scale(Inner(R, R), R))))
+        p2 = None
+    else:
+        raise ValueError('unknown operator combination')
+
+    exprs = [p1 for _ in range(10)]
+    if p2 is not None:
+        exprs += [p2 for _ in range(10)]
+
+    cost_dict = fit_pcfg(exprs, get_operators(), pseudocount=0.40)
+
+    # cost_dict[Vector] = 5
+    cost_dict[Outer] = 2
+    # cost_dict[ScaleInverse] = 24
+    # cost_dict[Hat] = 24
+    # cost_dict[Length] = 45
+    # cost_dict[Scale] = 57
+    # cost_dict[Inner] = 5
+    # cost_dict[Times] = 12
+    # cost_dict[Skew] = 34
+    # cost_dict[Cross] = 24
+
+    for op in cost_dict:
+        print(f'{op}\t{op.return_type}\t\t{cost_dict[op]}')
 
     return cost_dict
 
@@ -721,6 +742,6 @@ if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
 
-    # vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=900, cost_dict=dipole_cost_dict())
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=20000, cost_dict=None)
+    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=100000, cost_dict=dipole_cost_dict(get_operators()))
+    # vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=25000000, cost_dict=None)
     print(len(vector_basis), len(matrix_basis))
