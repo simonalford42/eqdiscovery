@@ -277,8 +277,9 @@ class AccelerationLearner():
         D = x.shape[2]
         assert D == self.dimension
 
-        # see comment for structure of valuations
-        valuations = self.evaluate_basis_functions(x, v)
+        with Timing("valuations"):
+            # see comment for structure of valuations
+            valuations = self.evaluate_basis_functions(x, v)
 
         # Construct the regression problem
         # We are predicting acceleration
