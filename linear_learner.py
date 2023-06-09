@@ -52,6 +52,18 @@ def arrays_proportional(x, y, tolerance=0.02):
     return np.max(np.abs(k*y-x)) < tolerance*np.max(np.abs(x))
 
 
+def normalize_array(x):
+    x = x / np.max(np.abs(x))
+
+    def round_to_sigfigs(x, sigfigs=2):
+        p = sigfigs
+        x_positive = np.where(np.isfinite(x) & (x != 0), np.abs(x), 10**(p-1))
+        mags = 10 ** (p - 1 - np.floor(np.log10(x_positive)))
+        return np.round(x * mags) / mags
+
+    return round_to_sigfigs(x, sigfigs=2)
+
+
 class AccelerationLearner():
     def __init__(self, dimension, alpha, penalty, basis, cutoff, cost_dict=None):
         self.alpha = alpha
@@ -245,19 +257,56 @@ class AccelerationLearner():
                 signature[b] = sig
 
 
+        signatures = {}
         for n_particles in [1,2]:
             for n_indices in [1,2]:
                 for n, b1 in enumerate(self.basis[(n_particles, n_indices)]):
+                    match = False
                     for b2 in self.basis[(n_particles, n_indices)][:n]:
                         if arrays_proportional(signature[b1], signature[b2]):
+                            n1 = normalize_array(signature[b1])
+                            n2 = normalize_array(signature[b2])
+                            if np.max(np.abs(n1-n2) / np.min((n1, n2))) < 0.02:
+                                print('norms match')
+                            else:
+                                print('norms do not match')
+                                print(n1)
+                                print(n2)
+                                print(np.abs(n1-n2))
+                                print(np.abs(n1-n2)/ np.min((n1, n2)))
+                            match = True
+                            signatures[b2].append((b1, signature[b1]))
                             problematic_functions.add(b1)
                             # print(b1.pretty_print(), "made redundant by", b2.pretty_print())
                             break
+                        else:
+                            n1 = normalize_array(signature[b1])
+                            n2 = normalize_array(signature[b2])
+                            if np.max(np.abs(n1-n2) / np.min((n1, n2))) < 0.02:
+                                print('SHOULDNT MATCH BUT DO')
+                            # else:
+                                # print('norms do not match')
+                                # print(n1)
+                                # print(n2)
+                                # print(np.abs(n1-n2))
+                                # print(np.abs(n1-n2)/ np.min((n1, n2)))
+
+                    if not match:
+                        signatures[b1] = [(b1, signature[b1])]
+
+        for b1 in signatures:
+            if (len(signatures[b1]) > 1):
+                print(b1.pretty_print(), "redundant with:")
+                for (b2, sig) in signatures[b1][1:]:
+                    print("\t", b2.pretty_print())
+            else:
+                print(b1.pretty_print(), "has no redundancies")
 
         print("Removing ", len(problematic_functions), "/", self.basis_size,
               "basis functions that are redundant")
         #print({pf.pretty_print() for pf in problematic_functions })
 
+        assert False
 
         valuation_dictionary = {(b, *rest): value
                                 for (b, *rest), value in valuation_dictionary.items()
@@ -287,9 +336,8 @@ class AccelerationLearner():
         D = x.shape[2]
         assert D == self.dimension
 
-        with Timing("valuations"):
-            # see comment for structure of valuations
-            valuations = self.evaluate_basis_functions(x, v)
+        # see comment for structure of valuations
+        valuations = self.evaluate_basis_functions(x, v)
 
         # Construct the regression problem
         # We are predicting acceleration

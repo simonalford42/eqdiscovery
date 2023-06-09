@@ -1,27 +1,7 @@
 import itertools
-import time
 import random
 import numpy as np
 import math
-
-class Timing(object):
-    def __init__(self, message):
-        self.message = message
-
-    def __enter__(self):
-        self.start = time.time()
-        return self
-
-    def __exit__(self, type, value, traceback):
-        dt = time.time() - self.start
-        if isinstance(self.message, str):
-            message = self.message
-        elif callable(self.message):
-            message = self.message(dt)
-        else:
-            raise ValueError("Timing message should be string function")
-        print(f"{message} in {dt:.1f} seconds")
-
 
 class Expression():
 
@@ -414,12 +394,13 @@ def expr_structure(expr):
 
 
 GOAL_EXPRS = []
-def weighted_bottom_up_generator(operators, constants, inputs, cost_dict=None):
+def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_dict=None):
     """
+    cost_bound: int. an upper bound on the cost of an expression
     operators: list of classes, such as [Times, If, ...]
     constants: list of possible leaves in syntax tree, such as [Number(1)]. Variables can also be leaves, but these are automatically inferred from `input_outputs`
     inputs: list of environments (the input), such as [{'x': 5}, {'x': 1}]
-    cost_dict: dict mapping Expression subclass to their cost. costs must be integral. if none provided, does uniform cost
+    cost_dict: dict mapping Expression subclass to their cost. costs must be integral. if none provided, does uniform cost (1 per node)
     yields: sequence of programs, ordered by expression cost, which are semantically distinct on the input examples
     """
 
@@ -532,6 +513,8 @@ def weighted_bottom_up_generator(operators, constants, inputs, cost_dict=None):
                             yield new_expression
 
         lvl += 1
+        if cost_bound and lvl > cost_bound:
+            break
 
 
 def integer_partitions(target_value, number_of_arguments):
@@ -689,21 +672,20 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
             if expression.return_type == "matrix":
                 matrix_basis.append(expression)
 
-    with Timing("weighted bottom up generator"):
-        for expression in weighted_bottom_up_generator(operators, constants,
-                                                      inputs, cost_dict=cost_dict):
-            if expression.return_type == "vector" and len(vector_basis) < size:
-                vector_basis.append(expression)
+    for expression in weighted_bottom_up_generator(20, operators, constants,
+                                                  inputs, cost_dict=cost_dict):
+        if expression.return_type == "vector" and len(vector_basis) < size:
+            vector_basis.append(expression)
 
-            if expression.return_type == "matrix" and len(matrix_basis) < size:
-                matrix_basis.append(expression)
-                # if len(GOAL_EXPRS) == 2:
-                    # print(f'{len(matrix_basis)} matrix basis terms to find goals')
-                    # print(f'{len(vector_basis)} vector basis terms')
-                    # assert False
+        if expression.return_type == "matrix" and len(matrix_basis) < size:
+            matrix_basis.append(expression)
+            # if len(GOAL_EXPRS) == 2:
+                # print(f'{len(matrix_basis)} matrix basis terms to find goals')
+                # print(f'{len(vector_basis)} vector basis terms')
+                # assert False
 
 
-            if len(vector_basis) >= size and len(matrix_basis) >= size: break
+        if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
     basis_cache[basis_key] = (vector_basis, matrix_basis)
     return basis_cache[basis_key]
