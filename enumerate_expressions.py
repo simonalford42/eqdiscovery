@@ -762,6 +762,6 @@ if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
 
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=100000, cost_dict=dipole_cost_dict(get_operators()))
-    # vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=25000000, cost_dict=None)
+    # vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=100000, cost_dict=dipole_cost_dict(get_operators()))
+    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=2000, cost_dict=None)
     print(len(vector_basis), len(matrix_basis))
