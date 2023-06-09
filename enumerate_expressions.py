@@ -1,7 +1,26 @@
 import itertools
+import time
 import random
 import numpy as np
 import math
+
+class Timing(object):
+    def __init__(self, message):
+        self.message = message
+
+    def __enter__(self):
+        self.start = time.time()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        dt = time.time() - self.start
+        if isinstance(self.message, str):
+            message = self.message
+        elif callable(self.message):
+            message = self.message(dt)
+        else:
+            raise ValueError("Timing message should be string function")
+        print(f"{message} in {dt:.1f} seconds")
 
 
 class Expression():
@@ -670,20 +689,21 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
             if expression.return_type == "matrix":
                 matrix_basis.append(expression)
 
-    for expression in weighted_bottom_up_generator(operators, constants,
-                                                  inputs, cost_dict=cost_dict):
-        if expression.return_type == "vector" and len(vector_basis) < size:
-            vector_basis.append(expression)
+    with Timing("weighted bottom up generator"):
+        for expression in weighted_bottom_up_generator(operators, constants,
+                                                      inputs, cost_dict=cost_dict):
+            if expression.return_type == "vector" and len(vector_basis) < size:
+                vector_basis.append(expression)
 
-        if expression.return_type == "matrix" and len(matrix_basis) < size:
-            matrix_basis.append(expression)
-            # if len(GOAL_EXPRS) == 2:
-                # print(f'{len(matrix_basis)} matrix basis terms to find goals')
-                # print(f'{len(vector_basis)} vector basis terms')
-                # assert False
+            if expression.return_type == "matrix" and len(matrix_basis) < size:
+                matrix_basis.append(expression)
+                # if len(GOAL_EXPRS) == 2:
+                    # print(f'{len(matrix_basis)} matrix basis terms to find goals')
+                    # print(f'{len(vector_basis)} vector basis terms')
+                    # assert False
 
 
-        if len(vector_basis) >= size and len(matrix_basis) >= size: break
+            if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
     basis_cache[basis_key] = (vector_basis, matrix_basis)
     return basis_cache[basis_key]
