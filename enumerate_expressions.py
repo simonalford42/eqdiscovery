@@ -155,6 +155,67 @@ class Inner(Expression):
     def arguments(self): return [self.x, self.y]
 
 
+class Norm(Expression):
+    return_type = "real"
+    argument_types = ["vector"]
+
+    def __init__(self, x):
+        self.x = x
+
+    def __str__(self):
+        return f"Norm({self.x})"
+
+    def pretty_print(self):
+        return f"{self.x.pretty_print()}^2"
+
+    def evaluate(self, environment):
+        x = self.x.evaluate(environment)
+        if isinstance(x, np.ndarray):
+            return (np.sum(x * x, -1))
+        return ((x * x).sum(-1).unsqueeze(-1))
+
+    def arguments(self): return [self.x]
+
+
+class AbstractionConst(Expression):
+    return_type = "vector"
+    argument_types = []
+
+    def __init__(self):
+        self.expr = ScaleInverse(Hat(Vector('R')), Norm(Vector('R')))
+
+    def __str__(self):
+        return f"Abstraction2()"
+
+    def pretty_print(self):
+        return f"##"
+
+    def evaluate(self, environment):
+        return self.expr.evaluate(environment)
+
+    def arguments(self): return []
+
+class Abstraction(Expression):
+    return_type = "vector"
+    argument_types = ["vector"]
+
+    def __init__(self, x):
+        self.x = x
+        self.expr = ScaleInverse(Hat(x), Norm(x))
+
+    def __str__(self):
+        return f"Abstraction({str(self.x)})"
+
+    def pretty_print(self):
+        xpp = self.x.pretty_print()
+        return f"({xpp}_hat / {xpp}^2)"
+
+    def evaluate(self, environment):
+        return self.expr.evaluate(environment)
+
+    def arguments(self): return [self.x]
+
+
 class NormCubed(Expression):
     return_type = "real"
     argument_types = ["vector"]
@@ -405,11 +466,22 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
     """
 
     variables = infer_variables(inputs)
+    # add any constants from the op list to the list of constants
+    old_operators = operators
+    operators = []
+    for op in old_operators:
+        if len(op.argument_types) == 0:
+            constants.append(op())
+        else:
+            operators.append(op)
+
     variables_and_constants = constants + variables
 
     if cost_dict is None:
         cost_dict = {op: 1 for op in operators}
         cost_dict.update({type(v): 1 for v in variables_and_constants})
+    else:
+        cost_bound = None
 
     for op in operators:
         if op not in cost_dict:
@@ -429,14 +501,8 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
     dim = max([len(v) for v in inputs[0].values()])
     check_goal = 'V1' in inputs[0] and dim == 3
     if check_goal:
-        R = Vector('R')
-        V1 = Vector('V1')
-
-        goal1_expr = Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R))))
-        goal2_expr = ScaleInverse(Outer(Cross(V1, R), Hat(R)), Times(Inner(R, R), Inner(R, R)))
-        # goal1_expr = Skew(ScaleInverse(V1, NormCubed(R)))
-        # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
-        goal_exprs = [goal1_expr, goal2_expr]
+        # goal_exprs = dipole_solution_expressions()
+        goal_exprs = all_task_solution_expressions()
 
         goal_vals = [np.array([goal_expr.evaluate(input) for input in inputs]) for goal_expr in goal_exprs]
         goal_vals = [goal_val / np.linalg.norm(goal_val) for goal_val in goal_vals]
@@ -474,7 +540,7 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
             if check_goal:
                 for i, goal_v1 in enumerate(goal_v1s):
                     if v1 == goal_v1 or v2 == goal_v1:
-                        print(f'found term {i+1}: {expression.pretty_print()}')
+                        print(f'found term {i+1}: {expression.pretty_print()} {expression.return_type}')
                         print(expr_structure(expression))
                         GOAL_EXPRS.append(expression.pretty_print())
 
@@ -608,36 +674,12 @@ def infer_variables(inputs):
     # goal1_expr = Skew(ScaleInverse(V1, NormCubed(R))
     # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
 
-def get_operators(dimension=3):
-
-    operators = [
-        # Divide,
-        Outer,
-        ScaleInverse,
-
-        Hat,
-        Length,
-        Scale,
-        Inner,
-        Times,
-
-        # NormCubed,
-        # NormForth,
-        # NormFifth,
-    ]
-
-    if dimension == 3: operators.extend([
-        Skew,
-        Cross,
-    ])
-    return operators
-
 basis_cache = {}
-def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
+def construct_basis(reals, vectors, size, dimension=3, cost_dict=None, cost_bound=20, check_goals=False):
     basis_key = (tuple(reals), tuple(vectors), size, dimension)
     if cost_dict is None and basis_key in basis_cache: return basis_cache[basis_key]
 
-    operators = get_operators(dimension)
+    operators = get_operators(reals, vectors, dimension)
 
     def random_input():
         d = {}
@@ -654,36 +696,19 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None):
 
     variables = infer_variables(inputs)
     constants = []
-    variables_and_constants = variables + constants
 
-    if any(v.name == 'V1' for v in variables):
-        V1 = [v for v in variables if v.name == 'V1'][0]
-        R = [r for r in variables if r.name == 'R'][0]
-
-        handcrafted_exprs = [
-            # Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R)))),
-            # Outer(ScaleInverse(Cross(V1, Hat(R)), Times(Inner(R, R), Inner(R, R))), R),
-        ]
-
-        for expression in handcrafted_exprs:
-            print('adding handcrafted expr to enumerated exprs: ', expression.pretty_print())
-            if expression.return_type == "vector":
-                vector_basis.append(expression)
-            if expression.return_type == "matrix":
-                matrix_basis.append(expression)
-
-    for expression in weighted_bottom_up_generator(20, operators, constants,
+    for expression in weighted_bottom_up_generator(cost_bound, operators, constants,
                                                   inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
 
         if expression.return_type == "matrix" and len(matrix_basis) < size:
             matrix_basis.append(expression)
-            # if len(GOAL_EXPRS) == 2:
-                # print(f'{len(matrix_basis)} matrix basis terms to find goals')
-                # print(f'{len(vector_basis)} vector basis terms')
-                # assert False
 
+        if check_goals and len(GOAL_EXPRS) == 2:
+            print(f'{len(matrix_basis)} matrix basis terms to find goals')
+            print(f'{len(vector_basis)} vector basis terms')
+            assert False
 
         if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
@@ -698,8 +723,16 @@ def dipole_cost_dict():
     R = Vector('R')
     V1 = Vector('V1')
 
+    if Norm in operators:
+        assert NormFifth not in operators
+        assert NormCubed not in operators
+        p1 = Skew(ScaleInverse(V1, Times(Norm(R), Length(R))))
+        p2 = Outer(Cross(R, V1), ScaleInverse(Hat(R), Times(Norm(R), Norm(R))))
+    elif AbstractionConst in operators:
+        p1 = Skew(ScaleInverse(V1, Divide(Length(R), Length(AbstractionConst()))))
+        p2 = Outer(Cross(AbstractionConst(), V1), Scale(Length(AbstractionConst()), R))
     # when we have norm forth and norm cubed
-    if NormFifth in operators and NormCubed in operators:
+    elif NormFifth in operators and NormCubed in operators:
         p1 = Skew(ScaleInverse(V1, NormCubed(R)))
         p2 = Outer(Cross(R, V1), ScaleInverse(R, NormFifth(R)))
     # when we only have norm fifth
@@ -735,15 +768,244 @@ def dipole_cost_dict():
     # cost_dict[Skew] = 34
     # cost_dict[Cross] = 24
 
-    for op in cost_dict:
-        print(f'{op}\t{op.return_type}\t\t{cost_dict[op]}')
-
     return cost_dict
+
+
+def all_task_solution_expressions_with_abstraction_const():
+    # drag3
+    # (R_hat / R^2)
+    # (* (len V) V)
+
+    # falling
+    # (R_hat / R^2)
+    # (R_hat / R^2)
+
+    # orbit
+    # (R_hat / R^2)
+    # (R_hat / R^2)
+
+    # orbit2
+    # (R_hat / R^2)
+    # (R_hat / R^2)
+    # (R_hat / R^2)
+    # (R_hat / R^2)
+    # (R_hat / R^2)
+    # (R_hat / R^2)
+    # (* (dp (R_hat / R^2) (R_hat / R^2)) (R_hat / R^2))
+    # (* (len (R_hat / R^2)) (R_hat / R^2))
+
+    # drag1
+    # V
+
+    # drag2
+    # (* (len V) V)
+
+    # magnet1
+    # (skew V)
+
+    # magnet2
+    # (op (X (R_hat / R^2) V1) (R_hat / R^2))
+    # (* (dp (R_hat / R^2) (R_hat / R^2)) (R_hat / R^2))
+    # (op (X (R_hat / R^2) V1) (R_hat / R^2))
+    # (op (R_hat / R^2) (X (R_hat / R^2) V1))
+    # (op (X (R_hat / R^2) V1) (R_hat / R^2))
+    # (op (R_hat / R^2) (X (R_hat / R^2) V1))
+    # (X (R_hat / R^2) V1)
+    # (skew (* (len (R_hat / R^2)) V1))
+    # (op (R_hat / R^2) (X (R_hat / R^2) V1))
+    # (skew (* (len (R_hat / R^2)) V1))
+    # (op (X (R_hat / R^2) V1) R)
+    # (op (X (R_hat / R^2) V1) R)
+    # (skew (* (len (R_hat / R^2)) V1))
+    # (op (X (R_hat / R^2) V1) R)
+    # (* (dp R V1) V1)
+    # (X R V1)
+    # (op (X R V1) V1)
+    # (op (X R V1) V1)
+    R = Vector('R')
+    V = Vector('V')
+    V1 = Vector('V1')
+
+    drag3_1 = AbstractionConst()
+    drag3_2 = Times(Length(V), V)
+
+    falling1 = AbstractionConst()
+    falling2 = AbstractionConst()
+
+    orbit1_1 = AbstractionConst()
+    orbit1_2 = AbstractionConst()
+
+    orbit2_1 = AbstractionConst()
+    orbit2_2 = AbstractionConst()
+    orbit2_3 = AbstractionConst()
+    orbit2_4 = AbstractionConst()
+    orbit2_5 = AbstractionConst()
+    orbit2_6 = AbstractionConst()
+
+    drag1_1 = V
+    drag2_1 = Times(Length(V), V)
+
+    magnet1_1 = Skew(V)
+
+    # magnet2
+    # 1 (op (X (R_hat / R^2) V1) (R_hat / R^2))
+    # 2 (* (dp (R_hat / R^2) (R_hat / R^2)) (R_hat / R^2))
+    # 3 (op (X (R_hat / R^2) V1) (R_hat / R^2))
+    # 4 (op (R_hat / R^2) (X (R_hat / R^2) V1))
+    # 5 (op (X (R_hat / R^2) V1) (R_hat / R^2))
+    # 6 (op (R_hat / R^2) (X (R_hat / R^2) V1))
+    # 7 (X (R_hat / R^2) V1)
+    # 8 (skew (* (len (R_hat / R^2)) V1))
+    # 9 (op (R_hat / R^2) (X (R_hat / R^2) V1))
+    # 10 (skew (* (len (R_hat / R^2)) V1))
+    # 11 (op (X (R_hat / R^2) V1) R)
+    # 12 (op (X (R_hat / R^2) V1) R)
+    # 13 (skew (* (len (R_hat / R^2)) V1))
+    # 14 (op (X (R_hat / R^2) V1) R)
+    # 15 (* (dp R V1) V1)
+    # 16 (X R V1)
+    # 17 (op (X R V1) V1)
+    # 18 (op (X R V1) V1)
+    magnet2_1 = Outer(Cross(AbstractionConst(), V1), AbstractionConst())
+    magnet2_2 = Times(Inner(AbstractionConst(), AbstractionConst()), AbstractionConst())
+    magnet2_3 = Outer(Cross(AbstractionConst(), V1), AbstractionConst())
+    magnet2_4 = Outer(AbstractionConst(), Cross(AbstractionConst(), V1))
+    magnet2_5 = magnet2_3
+    magnet2_6 = magnet2_4
+    magnet2_7 = Cross(AbstractionConst(), V1)
+    magnet2_8 = Skew(Times(Length(AbstractionConst()), V1))
+    magnet2_9 = magnet2_4
+    magnet2_10 = magnet2_8
+    magnet2_11 = Outer(Cross(AbstractionConst(), V1), R)
+    magnet2_12 = magnet2_11
+    magnet2_13 = magnet2_8
+    magnet2_14 = magnet2_11
+    magnet2_15 = Times(Inner(R, V1), V1)
+    magnet2_16 = Cross(R, V1)
+    magnet2_17 = Outer(magnet2_16, V1)
+    magnet2_18 = magnet2_17
+
+    return [drag3_1, drag3_2,
+            falling1, falling2,
+            orbit1_1, orbit1_2,
+            orbit2_1, orbit2_2, orbit2_3, orbit2_4, orbit2_5, orbit2_6,
+            drag1_1,
+            drag2_1,
+            magnet1_1,
+            magnet2_1, magnet2_2, magnet2_3, magnet2_4, magnet2_5, magnet2_6, magnet2_7, magnet2_8,
+            magnet2_9, magnet2_10, magnet2_11, magnet2_12, magnet2_13, magnet2_14, magnet2_15,
+            magnet2_16, magnet2_17, magnet2_18]
+
+
+def all_task_solution_expressions():
+    # drag3
+    # (/ (hat R) (dp R R))
+    # (/ R (dp R R))
+    # (* (dp V V) V)
+    # falling
+    # (/ (hat R) (dp R R))
+    # orbit
+    # (/ (hat R) (dp R R))
+    # orbit2
+    # (/ (hat R) (dp R R))
+    # drag1
+    # (* (len V) V)
+    # magnet1
+    # (skew V)
+    # magnet2
+    # (skew (/ V1 (dp R R)))
+    # (op (X V1 (hat R)) V1)
+    R = Vector('R')
+    V = Vector('V')
+    V1 = Vector('V1')
+
+    drag3_1 = ScaleInverse(Hat(R), Inner(R, R))
+    drag3_2 = ScaleInverse(R, Inner(R, R))
+    drag3_3 = Times(Inner(V, V), V)
+
+    falling1 = ScaleInverse(Hat(R), Inner(R, R))
+
+    orbit1 = ScaleInverse(Hat(R), Inner(R, R))
+
+    orbit2_1 = ScaleInverse(Hat(R), Inner(R, R))
+
+    drag1_1 = Times(Length(V), V)
+
+    magnet1_1 = Skew(V)
+
+    magnet2_1 = Skew(ScaleInverse(V, Inner(R, R)))
+    magnet2_2 = Outer(Cross(V1, Hat(R)), V1)
+
+    # return [magnet2_1, magnet2_2]
+    return [drag3_1, drag3_2, drag3_3,
+            falling1,
+            orbit1,
+            orbit2_1,
+            drag1_1,
+            magnet1_1,
+            magnet2_1, magnet2_2]
+
+
+def dipole_solution_expressions():
+    R = Vector('R')
+    V1 = Vector('V1')
+    goal1_expr = Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R))))
+    goal2_expr = ScaleInverse(Outer(Cross(V1, R), Hat(R)), Times(Inner(R, R), Inner(R, R)))
+    return [goal1_expr, goal2_expr]
+
+
+def library_learn(expressions):
+    programs = [e.pretty_print() for e in expressions]
+    from stitch_core import compress
+    res = compress(programs, iterations=1, max_arity=2)
+    print(f'{res.abstractions=}')
+
+
+def get_operators(reals=None, vectors=None, dimension=3):
+
+    operators = [
+        Divide,
+        Outer,
+        ScaleInverse,
+
+        # Hat,
+        Length,
+        Scale,
+        Inner,
+        Times,
+        # Abstraction,
+
+        # Norm,
+        # NormCubed,
+        # NormForth,
+        # NormFifth,
+    ]
+
+    if vectors is None or 'R' in vectors:
+        operators.extend([
+            # AbstractionConst,
+        ])
+
+    if dimension == 3: operators.extend([
+        Skew,
+        Cross,
+    ])
+
+    return operators
+
+
 
 if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
 
-    # vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=100000, cost_dict=dipole_cost_dict(get_operators()))
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=2000, cost_dict=None)
-    print(len(vector_basis), len(matrix_basis))
+    cost_dict = None
+    # cost_dict = fit_pcfg(all_task_solution_expressions(), get_operators())
+    # cost_dict = fit_pcfg(all_task_solution_expressions_with_abstraction_const(), get_operators())
+    # dipole_cost_dict = dipole_cost_dict()
+    # for op, cost in cost_dict.items():
+        # print(f'{op.__name__}\t\t{cost_dict[op]}\t{dipole_cost_dict[op]}')
+
+    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=200000, cost_dict=cost_dict, cost_bound=None, check_goals=True)
+
+    # library_learn(all_task_solution_expressions())

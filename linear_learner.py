@@ -71,8 +71,7 @@ class AccelerationLearner():
         self.penalty = penalty
         self.cutoff = cutoff
 
-        for op in get_operators(dimension):
-            print('\t', op)
+        print('Ops: ', [op.__name__ for op in get_operators(dimension)])
 
         if isinstance(basis, int):
             """
@@ -98,7 +97,7 @@ class AccelerationLearner():
             self.basis[(1,1)], self.basis[(1,2)]  = construct_basis([], ["V"], basis,
                                                                     dimension=dimension, cost_dict=cost_dict)
 
-            self.show_basis_function_counts()
+            # self.show_basis_function_counts()
         else:
             assert isinstance(basis, dict)
             self.basis=basis
@@ -139,6 +138,16 @@ class AccelerationLearner():
 
             print(f"a_{i} = {' + '.join(pretty_terms)}")
 
+    def check_goal_exprs(self):
+        matches = 0
+        for basis_fns in self.basis.values():
+            for b in basis_fns:
+                if b.pretty_print() in GOAL_EXPRS:
+                    matches += 1
+                    print('Goal expression still in basis:', b.pretty_print())
+        if matches <= 1:
+            print('Goal expression(s) missing from basis')
+
     def evaluate_basis_functions(self, x, v):
         """
         returns: dictionary mapping (b, t, i, j) to its vector or matrix valuation, where:
@@ -156,10 +165,7 @@ class AccelerationLearner():
 
 
         problematic_functions = set() # these are features that give nan/infs, or are otherwise invalid
-        for basis_fns in self.basis.values():
-            for b in basis_fns:
-                if b.pretty_print() in GOAL_EXPRS:
-                    print('Goal expression in initial basis:', b.pretty_print())
+        self.check_goal_exprs()
 
         if N == 1:
             problematic_functions = {b
@@ -218,10 +224,6 @@ class AccelerationLearner():
 
         bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
         # bad_functions = problematic_functions
-        for b in bad_functions:
-            if b.pretty_print() in GOAL_EXPRS:
-                print('UH OH: goal expression is a bad function:', b.pretty_print())
-                assert False
 
         valuation_dictionary = {(b, *rest): value
                                 for (b, *rest), value in valuation_dictionary.items()
@@ -229,12 +231,29 @@ class AccelerationLearner():
 
         self.basis = {b_key: [b for b in b_value if b not in bad_functions]
                       for b_key, b_value in self.basis.items()}
-        for basis_fns in self.basis.values():
-            for b in basis_fns:
-                if b.pretty_print() in GOAL_EXPRS:
-                    print('Goal expression still in basis:', b.pretty_print())
-
+        self.check_goal_exprs()
         print('New basis size: ', self.basis_size)
+
+        self.valuation_dictionary2 = valuation_dictionary2
+        max_vals = []
+        for (b, *rest) in valuation_dictionary:
+            max_val = max([abs(v).max() for v in valuation_dictionary2[b]])
+            max_vals.append((b, max_val))
+
+        max_vals = sorted(max_vals, key=lambda xx: -xx[1])
+        max_vals_dict = {}
+        for b, m in max_vals:
+            if m not in max_vals_dict:
+                max_vals_dict[m] = [b]
+            else:
+                max_vals_dict[m].append(b)
+
+
+        # for m in sorted(max_vals_dict.keys(), reverse=True):
+            # print(m, len(max_vals_dict[m]))
+            # for b in max_vals_dict[m][:5]:
+                # print('\t' + b.pretty_print())
+        # assert False
 
         # Now let's figure out if any of the basis functions are just linear rescalings of others
         # Compute the signature of each basis function, which is the vector of its valuations
@@ -257,56 +276,16 @@ class AccelerationLearner():
                 signature[b] = sig
 
 
-        signatures = {}
         for n_particles in [1,2]:
             for n_indices in [1,2]:
                 for n, b1 in enumerate(self.basis[(n_particles, n_indices)]):
-                    match = False
                     for b2 in self.basis[(n_particles, n_indices)][:n]:
                         if arrays_proportional(signature[b1], signature[b2]):
-                            n1 = normalize_array(signature[b1])
-                            n2 = normalize_array(signature[b2])
-                            if np.max(np.abs(n1-n2) / np.min((n1, n2))) < 0.02:
-                                print('norms match')
-                            else:
-                                print('norms do not match')
-                                print(n1)
-                                print(n2)
-                                print(np.abs(n1-n2))
-                                print(np.abs(n1-n2)/ np.min((n1, n2)))
-                            match = True
-                            signatures[b2].append((b1, signature[b1]))
                             problematic_functions.add(b1)
-                            # print(b1.pretty_print(), "made redundant by", b2.pretty_print())
                             break
-                        else:
-                            n1 = normalize_array(signature[b1])
-                            n2 = normalize_array(signature[b2])
-                            if np.max(np.abs(n1-n2) / np.min((n1, n2))) < 0.02:
-                                print('SHOULDNT MATCH BUT DO')
-                            # else:
-                                # print('norms do not match')
-                                # print(n1)
-                                # print(n2)
-                                # print(np.abs(n1-n2))
-                                # print(np.abs(n1-n2)/ np.min((n1, n2)))
-
-                    if not match:
-                        signatures[b1] = [(b1, signature[b1])]
-
-        for b1 in signatures:
-            if (len(signatures[b1]) > 1):
-                print(b1.pretty_print(), "redundant with:")
-                for (b2, sig) in signatures[b1][1:]:
-                    print("\t", b2.pretty_print())
-            else:
-                print(b1.pretty_print(), "has no redundancies")
 
         print("Removing ", len(problematic_functions), "/", self.basis_size,
               "basis functions that are redundant")
-        #print({pf.pretty_print() for pf in problematic_functions })
-
-        assert False
 
         valuation_dictionary = {(b, *rest): value
                                 for (b, *rest), value in valuation_dictionary.items()
@@ -314,8 +293,12 @@ class AccelerationLearner():
         self.basis = {b_key: [b for b in b_value if b not in problematic_functions ]
                       for b_key, b_value in self.basis.items()}
 
-        self.show_basis_function_counts()
+        for basis_fns in self.basis.values():
+            for b in basis_fns:
+                if b.pretty_print() in GOAL_EXPRS:
+                    print('Goal expression still in basis:', b.pretty_print())
 
+        print('New basis size: ', self.basis_size)
 
         return valuation_dictionary
 
@@ -373,8 +356,6 @@ class AccelerationLearner():
 
         feature_cost = [ self.penalty*int(basis_function.return_type == "matrix") + 1
                          for (basis_function, *rest) in feature_names ]
-        print('disabled feature cost')
-        feature_cost = None
 
         coefficients = sparse_regression(X_matrix, Y, alpha=self.alpha, feature_cost=feature_cost)
 
@@ -384,6 +365,11 @@ class AccelerationLearner():
         ]
 
         for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
+            # max_val = max([abs(v).max() for v in self.valuation_dictionary2[basis_expression]])
+            # avg_val = np.mean([v.mean() for v in self.valuation_dictionary2[basis_expression]])
+            # min_val = min([abs(v).min() for v in self.valuation_dictionary2[basis_expression]])
+            # val_std = np.std([abs(v).max() for v in self.valuation_dictionary2[basis_expression]])
+            # print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices, f'{max_val:.3f}, {avg_val:.3f}, {min_val:.3f}, {val_std:.3f}')
             print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
 
         # did we just shrink the basis?
@@ -403,8 +389,12 @@ class AccelerationLearner():
                      if abs(coefficients[feature_index]) > 1e-3]
 
             for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
+                # max_val = max([abs(v).max() for v in self.valuation_dictionary2[basis_expression]])
+                # avg_val = np.mean([v.mean() for v in self.valuation_dictionary2[basis_expression]])
+                # min_val = min([abs(v).min() for v in self.valuation_dictionary2[basis_expression]])
+                # val_std = np.std([abs(v).max() for v in self.valuation_dictionary2[basis_expression]])
+                # print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices, f'{max_val:.3f}, {avg_val:.3f}, {min_val:.3f}, {val_std:.3f}')
                 print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
-                # print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices, "\t", expr_structure(basis_expression))
 
             # now we convert to acceleration laws
             self.acceleration_laws = []
@@ -456,7 +446,7 @@ if __name__ == '__main__':
     parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
     parser.add_argument("--refit", "-r", action="store_true", help="refit with learned pcfg")
     parser.add_argument("--cutoff", "-c", default=1E-4, type=int, help="remove functions with coefficients below this value during sparse regression")
-    parser.add_argument("--pcfg", action="store_true", help="Use pcfg for enumerating basis functions")
+    parser.add_argument("--pcfg", default='none', type=str, help="pcfg to enumerate from")
     arguments = parser.parse_args()
 
     for name, callback in [
@@ -470,8 +460,10 @@ if __name__ == '__main__':
             ("magnet2", simulate_charge_dipole),
 
     ]:
-        if arguments.simulation and arguments.simulation != name:
+        if arguments.simulation != name and arguments.simulation != 'all':
+
             continue
+
         print(f"Testing physics learner on {name}")
         x, v, f, a = callback()
 
@@ -483,12 +475,24 @@ if __name__ == '__main__':
 
         dimension = 3 if arguments.embed else x.shape[-1]
 
+        if arguments.pcfg == 'none':
+            pcfg = None
+        elif arguments.pcfg == 'dipole':
+            pcfg = dipole_cost_dict()
+        elif arguments.pcfg == 'all':
+            pcfg = fit_pcfg(all_task_solution_expressions(), get_operators(dimension))
+        elif arguments.pcfg == 'all_const':
+            pcfg = fit_pcfg(all_task_solution_expressions_with_abstraction_const(), get_operators(dimension))
+        else:
+            raise ValueError(f'Unknown pcfg: {arguments.pcfg}')
+
         al = AccelerationLearner(dimension,
                                  arguments.alpha,
                                  arguments.penalty,
                                  arguments.basis,
                                  arguments.cutoff,
-                                 dipole_cost_dict(get_operators()) if arguments.pcfg else None)
+                                 pcfg)
+
         al = al.fit(x, v, a)
 
         if arguments.refit:
