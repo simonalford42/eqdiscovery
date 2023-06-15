@@ -138,7 +138,7 @@ class AccelerationLearner():
 
             print(f"a_{i} = {' + '.join(pretty_terms)}")
 
-    def check_goal_exprs(self):
+    def check_goal_exprs_present_in_basis(self):
         matches = 0
         for basis_fns in self.basis.values():
             for b in basis_fns:
@@ -147,6 +147,17 @@ class AccelerationLearner():
                     print('Goal expression still in basis:', b.pretty_print())
         if matches <= 1:
             print('Goal expression(s) missing from basis')
+
+
+    def remove_from_basis(self, fns_to_remove):
+        valuation_dictionary = {(b, *rest): value
+                                for (b, *rest), value in valuation_dictionary.items()
+                                if b not in fns_to_remove}
+        self.basis = {b_key: [b for b in b_value if b not in fns_to_remove]
+                      for b_key, b_value in self.basis.items()}
+        self.check_goal_exprs_present_in_basis()
+        print('New basis size: ', self.basis_size)
+
 
     def evaluate_basis_functions(self, x, v):
         """
@@ -158,14 +169,11 @@ class AccelerationLearner():
         """
 
         valuation_dictionary = {}
-        T = x.shape[0]
-        N = x.shape[1]
-        D = x.shape[2]
+        T, N, D = x.shape
         assert D == self.dimension
 
-
         problematic_functions = set() # these are features that give nan/infs, or are otherwise invalid
-        self.check_goal_exprs()
+        self.check_goal_exprs_present_in_basis()
 
         if N == 1:
             problematic_functions = {b
@@ -202,7 +210,6 @@ class AccelerationLearner():
                                 else:
                                     valuation_dictionary2[b] = [value]
 
-
         all_zero_functions = set()
         too_small_functions = set()
         for b in valuation_dictionary2:
@@ -213,47 +220,14 @@ class AccelerationLearner():
             elif max_val <= 1E-6:
                 too_small_functions.add(b)
 
-        print("removing ", len(problematic_functions), "/", self.basis_size,
-              "basis functions that cause numerical instability")
-
-        print("removing ", len(too_small_functions), "/", self.basis_size,
-              "basis functions that are too small")
-
-        print("removing ", len(all_zero_functions), "/", self.basis_size,
-              "basis functions that are all zeros")
+        for fns, cause in zip(
+            [problematic_functions, too_small_functions, all_zero_functions],
+            ["cause numerical instability", "are too small", "are all zeros"]):
+            print("removing ", len(fns), "/", self.basis_size,
+                  "basis functions that", cause)
 
         bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
-        # bad_functions = problematic_functions
-
-        valuation_dictionary = {(b, *rest): value
-                                for (b, *rest), value in valuation_dictionary.items()
-                                if b not in bad_functions}
-
-        self.basis = {b_key: [b for b in b_value if b not in bad_functions]
-                      for b_key, b_value in self.basis.items()}
-        self.check_goal_exprs()
-        print('New basis size: ', self.basis_size)
-
-        self.valuation_dictionary2 = valuation_dictionary2
-        max_vals = []
-        for (b, *rest) in valuation_dictionary:
-            max_val = max([abs(v).max() for v in valuation_dictionary2[b]])
-            max_vals.append((b, max_val))
-
-        max_vals = sorted(max_vals, key=lambda xx: -xx[1])
-        max_vals_dict = {}
-        for b, m in max_vals:
-            if m not in max_vals_dict:
-                max_vals_dict[m] = [b]
-            else:
-                max_vals_dict[m].append(b)
-
-
-        # for m in sorted(max_vals_dict.keys(), reverse=True):
-            # print(m, len(max_vals_dict[m]))
-            # for b in max_vals_dict[m][:5]:
-                # print('\t' + b.pretty_print())
-        # assert False
+        self.remove_from_basis(bad_functions)
 
         # Now let's figure out if any of the basis functions are just linear rescalings of others
         # Compute the signature of each basis function, which is the vector of its valuations
@@ -275,7 +249,6 @@ class AccelerationLearner():
 
                 signature[b] = sig
 
-
         for n_particles in [1,2]:
             for n_indices in [1,2]:
                 for n, b1 in enumerate(self.basis[(n_particles, n_indices)]):
@@ -286,19 +259,7 @@ class AccelerationLearner():
 
         print("Removing ", len(problematic_functions), "/", self.basis_size,
               "basis functions that are redundant")
-
-        valuation_dictionary = {(b, *rest): value
-                                for (b, *rest), value in valuation_dictionary.items()
-                                if b not in problematic_functions}
-        self.basis = {b_key: [b for b in b_value if b not in problematic_functions ]
-                      for b_key, b_value in self.basis.items()}
-
-        for basis_fns in self.basis.values():
-            for b in basis_fns:
-                if b.pretty_print() in GOAL_EXPRS:
-                    print('Goal expression still in basis:', b.pretty_print())
-
-        print('New basis size: ', self.basis_size)
+        self.remove_from_basis(problematic_functions)
 
         return valuation_dictionary
 
@@ -365,11 +326,6 @@ class AccelerationLearner():
         ]
 
         for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
-            # max_val = max([abs(v).max() for v in self.valuation_dictionary2[basis_expression]])
-            # avg_val = np.mean([v.mean() for v in self.valuation_dictionary2[basis_expression]])
-            # min_val = min([abs(v).min() for v in self.valuation_dictionary2[basis_expression]])
-            # val_std = np.std([abs(v).max() for v in self.valuation_dictionary2[basis_expression]])
-            # print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices, f'{max_val:.3f}, {avg_val:.3f}, {min_val:.3f}, {val_std:.3f}')
             print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
 
         # did we just shrink the basis?
@@ -389,11 +345,6 @@ class AccelerationLearner():
                      if abs(coefficients[feature_index]) > 1e-3]
 
             for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
-                # max_val = max([abs(v).max() for v in self.valuation_dictionary2[basis_expression]])
-                # avg_val = np.mean([v.mean() for v in self.valuation_dictionary2[basis_expression]])
-                # min_val = min([abs(v).min() for v in self.valuation_dictionary2[basis_expression]])
-                # val_std = np.std([abs(v).max() for v in self.valuation_dictionary2[basis_expression]])
-                # print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices, f'{max_val:.3f}, {avg_val:.3f}, {min_val:.3f}, {val_std:.3f}')
                 print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
 
             # now we convert to acceleration laws
