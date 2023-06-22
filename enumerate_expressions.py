@@ -6,13 +6,20 @@ import math
 class Expression():
 
     def evaluate(self, environment):
-        assert False, "not implemented"
+        return self.__class__.op(*[arg.evaluate(environment) for arg in self.arguments()])
 
     def arguments(self):
         assert False, "not implemented"
 
     def cost(self):
         return 1 + sum([0] + [argument.cost() for argument in self.arguments()])
+
+    def pretty_print(self):
+        return '(' + self.__class__.op_str + ' ' + ' '.join([arg.pretty_print() for arg in self.arguments()]) + ')'
+
+    def __str__(self):
+        return self.__class__.__name__ + '(' + ', '.join(str(a) for a in self.arguments()) + ')'
+
 
     @property
     def return_type(self):
@@ -73,61 +80,33 @@ class Vector(Expression):
 class Plus(Expression):
     return_type = "real"
     argument_types = ["real","real"]
+    op_str = "+"
+    op = lambda x, y: x + y
 
     def __init__(self, x, y):
         self.x, self.y = x, y
-
-    def __str__(self):
-        return f"Plus({self.x}, {self.y})"
-
-    def pretty_print(self):
-        return f"(+ {self.x.pretty_print()} {self.y.pretty_print()})"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        y = self.y.evaluate(environment)
-        return x + y
 
     def arguments(self): return [self.x, self.y]
 
 class Times(Expression):
     return_type = "real"
     argument_types = ["real","real"]
+    op_str = "*"
+    op = lambda x, y: x * y
 
     def __init__(self, x, y):
         self.x, self.y = x, y
-
-    def __str__(self):
-        return f"Times({self.x}, {self.y})"
-
-    def pretty_print(self):
-        return f"(* {self.x.pretty_print()} {self.y.pretty_print()})"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        y = self.y.evaluate(environment)
-        return x * y
 
     def arguments(self): return [self.x, self.y]
 
 class Divide(Expression):
     return_type = "real"
     argument_types = ["real","real"]
+    op_str = "/"
+    op = lambda x, y: x / y
 
     def __init__(self, x, y):
         self.x, self.y = x, y
-
-    def __str__(self):
-        return f"Divide({self.x}, {self.y})"
-
-    def pretty_print(self):
-        return f"(/ {self.x.pretty_print()} {self.y.pretty_print()})"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        y = self.y.evaluate(environment)
-        #y[np.] = np.clip(y, 1e-3, None)
-        return  x / y
 
     def arguments(self): return [self.x, self.y]
 
@@ -135,15 +114,10 @@ class Divide(Expression):
 class Inner(Expression):
     return_type = "real"
     argument_types = ["vector","vector"]
+    op_str = "dp"
 
     def __init__(self, x, y):
         self.x, self.y = x, y
-
-    def __str__(self):
-        return f"Inner({self.x}, {self.y})"
-
-    def pretty_print(self):
-        return f"(dp {self.x.pretty_print()} {self.y.pretty_print()})"
 
     def evaluate(self, environment):
         x = self.x.evaluate(environment)
@@ -155,34 +129,12 @@ class Inner(Expression):
     def arguments(self): return [self.x, self.y]
 
 
-class Norm(Expression):
-    return_type = "real"
-    argument_types = ["vector"]
-
-    def __init__(self, x):
-        self.x = x
-
-    def __str__(self):
-        return f"Norm({self.x})"
-
-    def pretty_print(self):
-        return f"{self.x.pretty_print()}^2"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        if isinstance(x, np.ndarray):
-            return (np.sum(x * x, -1))
-        return ((x * x).sum(-1).unsqueeze(-1))
-
-    def arguments(self): return [self.x]
-
-
 class AbstractionConst(Expression):
     return_type = "vector"
     argument_types = []
 
     def __init__(self):
-        self.expr = ScaleInverse(Hat(Vector('R')), Norm(Vector('R')))
+        self.expr = ScaleInverse(Hat(Vector('R')), Inner(Vector('R'), Vector('R')))
 
     def __str__(self):
         return f"Abstraction2()"
@@ -195,162 +147,55 @@ class AbstractionConst(Expression):
 
     def arguments(self): return []
 
-class Abstraction(Expression):
-    return_type = "vector"
-    argument_types = ["vector"]
-
-    def __init__(self, x):
-        self.x = x
-        self.expr = ScaleInverse(Hat(x), Norm(x))
-
-    def __str__(self):
-        return f"Abstraction({str(self.x)})"
-
-    def pretty_print(self):
-        xpp = self.x.pretty_print()
-        return f"({xpp}_hat / {xpp}^2)"
-
-    def evaluate(self, environment):
-        return self.expr.evaluate(environment)
-
-    def arguments(self): return [self.x]
-
-
-class NormCubed(Expression):
-    return_type = "real"
-    argument_types = ["vector"]
-
-    def __init__(self, x):
-        self.x = x
-
-    def __str__(self):
-        return f"NormCubed({self.x})"
-
-    def pretty_print(self):
-        return f"{self.x.pretty_print()}^3"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        if isinstance(x, np.ndarray):
-            return (np.sum(x * x, -1))**(3/2)
-        return ((x * x).sum(-1).unsqueeze(-1))**(3/2)
-
-    def arguments(self): return [self.x]
-
-
-class NormForth(Expression):
-    return_type = "real"
-    argument_types = ["vector"]
-
-    def __init__(self, x):
-        self.x = x
-
-    def __str__(self):
-        return f"NormForth({self.x})"
-
-    def pretty_print(self):
-        return f"{self.x.pretty_print()}^4"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        if isinstance(x, np.ndarray):
-            return (np.sum(x * x, -1))**(2)
-        return ((x * x).sum(-1).unsqueeze(-1))**(2)
-
-    def arguments(self): return [self.x]
-
-
-class NormFifth(Expression):
-    return_type = "real"
-    argument_types = ["vector"]
-
-    def __init__(self, x):
-        self.x = x
-
-    def __str__(self):
-        return f"NormFifth({self.x})"
-
-    def pretty_print(self):
-        return f"{self.x.pretty_print()}^5"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        if isinstance(x, np.ndarray):
-            return (np.sum(x * x, -1))**(5/2)
-        return ((x * x).sum(-1).unsqueeze(-1))**(5/2)
-
-    def arguments(self): return [self.x]
-
 
 class Cross(Expression):
     return_type = "vector"
     argument_types = ["vector","vector"]
+    op_str = "X"
 
     def __init__(self, x, y):
         self.x, self.y = x, y
 
-    def __str__(self):
-        return f"Cross({self.x}, {self.y})"
-
-    def pretty_print(self):
-        return f"(X {self.x.pretty_print()} {self.y.pretty_print()})"
-
     def evaluate(self, environment):
         x = self.x.evaluate(environment)
         y = self.y.evaluate(environment)
-        if isinstance(x, np.ndarray):
-            return np.cross(x, y)
-        assert False
-        return (x * y).sum(-1).unsqueeze(-1)
+        assert isinstance(x, np.ndarray)
+        return np.cross(x, y)
 
     def arguments(self): return [self.x, self.y]
 
 class Outer(Expression):
     return_type = "matrix"
     argument_types = ["vector","vector"]
+    op_str = "op"
 
     def __init__(self, x, y):
         self.x, self.y = x, y
 
-    def __str__(self):
-        return f"Outer({self.x}, {self.y})"
-
-    def pretty_print(self):
-        return f"(op {self.x.pretty_print()} {self.y.pretty_print()})"
-
     def evaluate(self, environment):
         x = self.x.evaluate(environment)
         y = self.y.evaluate(environment)
-        if isinstance(x, np.ndarray):
-            return np.outer(x, y)
-        assert False
-        return (x * y).sum(-1).unsqueeze(-1)
+        assert isinstance(x, np.ndarray)
+        return np.outer(x, y)
 
     def arguments(self): return [self.x, self.y]
 
 class Skew(Expression):
     return_type = "matrix"
     argument_types = ["vector"]
+    op_str = "skew"
 
     def __init__(self, x):
         self.x = x
 
-    def __str__(self):
-        return f"Skew({self.x})"
-
-    def pretty_print(self):
-        return f"(skew {self.x.pretty_print()})"
-
     def evaluate(self, environment):
         v = self.x.evaluate(environment)
-        if isinstance(v, np.ndarray):
-            x, y, z = v[0], v[1], v[2]
+        assert isinstance(v, np.ndarray)
+        x, y, z = v[0], v[1], v[2]
 
-            return np.array([[0, -z, y],
-                             [z, 0, -x],
-                             [-y, x, 0]])
-        assert False
-        return (x * y).sum(-1).unsqueeze(-1)
+        return np.array([[0, -z, y],
+                         [z, 0, -x],
+                         [-y, x, 0]])
 
     def arguments(self): return [self.x]
 
@@ -358,19 +203,11 @@ class Skew(Expression):
 class Length(Expression):
     return_type = "real"
     argument_types = ["vector"]
+    op_str = "len"
+    op = lambda x: np.sum(x * x)**0.5
 
     def __init__(self, x):
         self.x = x
-
-    def __str__(self):
-        return f"Length({self.x})"
-
-    def pretty_print(self):
-        return f"(len {self.x.pretty_print()})"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        return np.sum(x * x)**0.5
 
     def arguments(self): return [self.x]
 
@@ -378,55 +215,32 @@ class Length(Expression):
 class Scale(Expression):
     return_type = "vector"
     argument_types = ["real","vector"]
+    op_str = "v*"
+    op = lambda x, y: x * y
 
     def __init__(self, x, y):
         self.x, self.y = x, y
-
-    def __str__(self):
-        return f"Scale({self.x}, {self.y})"
-
-    def pretty_print(self):
-        return f"(* {self.x.pretty_print()} {self.y.pretty_print()})"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        y = self.y.evaluate(environment)
-        return x * y
 
     def arguments(self): return [self.x, self.y]
 
 class ScaleInverse(Expression):
     return_type = "vector"
     argument_types = ["vector", "real"]
+    op_str = "v/"
+    op = lambda x, y: x / y
 
     def __init__(self, x, y):
         self.x, self.y = x, y
-
-    def __str__(self):
-        return f"ScaleInverse({self.x}, {self.y})"
-
-    def pretty_print(self):
-        return f"(/ {self.x.pretty_print()} {self.y.pretty_print()})"
-
-    def evaluate(self, environment):
-        x = self.x.evaluate(environment)
-        y = self.y.evaluate(environment)
-        return x / y
 
     def arguments(self): return [self.x, self.y]
 
 class Hat(Expression):
     return_type = "vector"
     argument_types = ["vector"]
+    op_str = "hat"
 
     def __init__(self, x):
         self.x = x
-
-    def __str__(self):
-        return f"Hat({self.x})"
-
-    def pretty_print(self):
-        return f"(hat {self.x.pretty_print()})"
 
     def evaluate(self, environment):
         x = self.x.evaluate(environment)
@@ -438,6 +252,28 @@ class Hat(Expression):
             return x/(((x*x).sum(-1)**0.5).unsqueeze(-1))
 
     def arguments(self): return [self.x]
+
+
+def abstraction(expr):
+    class Abstraction(Expression):
+        return_type = expr.return_type
+        argument_types = []
+
+    def __init__(self):
+        self.expr = expr
+
+    def __str__(self):
+        return f"Abstraction({expr})"
+
+    def pretty_print(self):
+        return f"##"
+
+    def arguments(self): return []
+
+    def evaluate(self, environment):
+        return self.expr.evaluate(environment)
+
+    return Abstraction()
 
 
 def expr_structure(expr):
@@ -454,6 +290,56 @@ def expr_structure(expr):
             + ')')
 
 
+def all_operators():
+    return [Plus, Times, Divide, Inner, Cross, Outer, Skew, Length, Scale, ScaleInverse, Hat]
+
+def pretty_print_to_expr(expr_str):
+    # example: "(+ (len V) (len V))" becomes Plus(Length(Vector('V')), Length(Vector('V')))
+    # (+ (len V) (len V)) becomes Plus(Length(Vector('V')), Length(Vector('V')))
+    # (op (X R V1) (/ (hat R) (* (dp R R) (dp R R))))
+    # (skew (/ V1 (* (dp R R) (dp R (hat R)))))
+    op_str_to_op = {op.op_str: op for op in all_operators()}
+    # we don't support Reals yet
+    const_str_to_const = {s: Vector(s) for s in ['R', 'V', 'V1', 'V2']}
+    const_str_to_const["##"] = AbstractionConst()
+
+    def parse_expr(expr_str):
+        if expr_str[0] == '(' and expr_str[-1] == ')':
+            op_str = expr_str[1:].split(' ')[0]
+            args_str = expr_str[len(op_str)+2:-1]
+            # args are either surrounded by parentheses, or a word like R or V1
+            args = []
+            while len(args_str) > 0:
+                if args_str[0] == '(':
+                    # find the matching closing parenthesis
+                    depth = 0
+                    for i, c in enumerate(args_str):
+                        if c == '(': depth += 1
+                        if c == ')': depth -= 1
+                        if depth == 0:
+                            break
+                    arg_str = args_str[:i+1]
+                    args.append(parse_expr(arg_str))
+                    args_str = args_str[i+2:]
+                else:
+                    if ' ' not in args_str:
+                        arg_str = args_str
+                        args.append(parse_expr(arg_str))
+                        break
+                    else:
+                        i = args_str.index(' ')
+                        arg_str = args_str[:i]
+                        args.append(parse_expr(arg_str))
+                        args_str = args_str[i+1:]
+
+            return op_str_to_op[op_str](*args)
+        else:
+            assert expr_str in const_str_to_const, f'unknown constant {expr_str}'
+            return const_str_to_const[expr_str]
+
+    return parse_expr(expr_str)
+
+
 GOAL_EXPRS = []
 def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_dict=None):
     """
@@ -466,15 +352,6 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
     """
 
     variables = infer_variables(inputs)
-    # add any constants from the op list to the list of constants
-    old_operators = operators
-    operators = []
-    for op in old_operators:
-        if len(op.argument_types) == 0:
-            constants.append(op())
-        else:
-            operators.append(op)
-
     variables_and_constants = constants + variables
 
     if cost_dict is None:
@@ -501,8 +378,10 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
     dim = max([len(v) for v in inputs[0].values()])
     check_goal = 'V1' in inputs[0] and dim == 3
     if check_goal:
-        # goal_exprs = dipole_solution_expressions()
-        goal_exprs = all_task_solution_expressions()
+        goal_exprs = dipole_solution_expressions()
+        # goal_exprs = list(set(all_task_solution_expressions()))
+        # for i, goal_expr in enumerate(goal_exprs):
+            # print(f'goal {i+1}: {goal_expr.pretty_print()}')
 
         goal_vals = [np.array([goal_expr.evaluate(input) for input in inputs]) for goal_expr in goal_exprs]
         goal_vals = [goal_val / np.linalg.norm(goal_val) for goal_val in goal_vals]
@@ -675,11 +554,11 @@ def infer_variables(inputs):
     # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
 
 basis_cache = {}
-def construct_basis(reals, vectors, size, dimension=3, cost_dict=None, cost_bound=20, check_goals=False):
+def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None, cost_bound=20, check_goals=False):
     basis_key = (tuple(reals), tuple(vectors), size, dimension)
     if cost_dict is None and basis_key in basis_cache: return basis_cache[basis_key]
 
-    operators = get_operators(reals, vectors, dimension)
+    # operators = get_operators(reals, vectors, dimension)
 
     def random_input():
         d = {}
@@ -697,13 +576,27 @@ def construct_basis(reals, vectors, size, dimension=3, cost_dict=None, cost_boun
     variables = infer_variables(inputs)
     constants = []
 
+    # add any constants from the op list to the list of constants
+    old_operators = operators
+    operators = []
+    for op in old_operators:
+        # library learned constants aren't classes, but actual instances of exprs
+        if isinstance(op, Expression):
+            constants.append(op)
+        else:
+            operators.append(op)
+
     for expression in weighted_bottom_up_generator(cost_bound, operators, constants,
                                                   inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
+            # if len(vector_basis) % 100 == 0:
+                # print(f'{len(vector_basis)} vector basis terms')
 
         if expression.return_type == "matrix" and len(matrix_basis) < size:
             matrix_basis.append(expression)
+            # if len(matrix_basis) % 100 == 0:
+                # print(f'{len(matrix_basis)} matrix basis terms')
 
         if check_goals and len(GOAL_EXPRS) == 2:
             print(f'{len(matrix_basis)} matrix basis terms to find goals')
@@ -917,7 +810,7 @@ def all_task_solution_expressions():
     # (op (X V1 (hat R)) V1)
     R = Vector('R')
     V = Vector('V')
-    V1 = Vector('V1')
+    # V1 = Vector('V1')
 
     drag3_1 = ScaleInverse(Hat(R), Inner(R, R))
     drag3_2 = ScaleInverse(R, Inner(R, R))
@@ -934,7 +827,7 @@ def all_task_solution_expressions():
     magnet1_1 = Skew(V)
 
     magnet2_1 = Skew(ScaleInverse(V, Inner(R, R)))
-    magnet2_2 = Outer(Cross(V1, Hat(R)), V1)
+    # magnet2_2 = Outer(Cross(V1, Hat(R)), V1)
 
     # return [magnet2_1, magnet2_2]
     return [drag3_1, drag3_2, drag3_3,
@@ -943,7 +836,7 @@ def all_task_solution_expressions():
             orbit2_1,
             drag1_1,
             magnet1_1,
-            magnet2_1, magnet2_2]
+            magnet2_1] #, magnet2_2]
 
 
 def dipole_solution_expressions():
@@ -956,44 +849,39 @@ def dipole_solution_expressions():
 
 def library_learn(expressions):
     programs = [e.pretty_print() for e in expressions]
+    print('Library learning on expressions:')
+    for p in programs:
+        print('\t' + p)
     from stitch_core import compress
     res = compress(programs, iterations=1, max_arity=2)
-    print(f'{res.abstractions=}')
+    print(f'Library learning result: {res.abstractions}')
+    return [a.body for a in res.abstractions]
 
 
-def get_operators(reals=None, vectors=None, dimension=3):
+def no_hat_expressions():
+    with_hat_expressions = all_task_solution_expressions()
+    # replace all instances of ScaleInverse(Hat(R), Inner(R, R)) with (/ R (len (* (dp R R) R)))
+    R = Vector('R')
+    original = ScaleInverse(Hat(R), Inner(R, R))
+    replacement = ScaleInverse(R, Length(Times(Inner(R, R), R)))
 
-    operators = [
-        Divide,
-        Outer,
-        ScaleInverse,
+    def replace_expr(expr, original, replacement):
+        if expr == original:
+            return replacement
+        else:
+            return expr
 
-        # Hat,
-        Length,
-        Scale,
-        Inner,
-        Times,
-        # Abstraction,
-
-        # Norm,
-        # NormCubed,
-        # NormForth,
-        # NormFifth,
-    ]
-
-    if vectors is None or 'R' in vectors:
-        operators.extend([
-            # AbstractionConst,
-        ])
-
-    if dimension == 3: operators.extend([
-        Skew,
-        Cross,
-    ])
-
-    return operators
+    return [replace_expr(expr, original, replacement) for expr in with_hat_expressions]
 
 
+def test_pretty_print_to_expr():
+    exprs = all_task_solution_expressions()
+    exprs += all_task_solution_expressions_with_abstraction_const()
+    exprs += dipole_solution_expressions()
+    for expr in exprs:
+        pp = expr.pretty_print()
+        expr2 = pretty_print_to_expr(pp)
+        assert pp == expr2.pretty_print(), f'{pp} != {expr2.pretty_print()}'
 
 if __name__ == '__main__':
     np.random.seed(0)
@@ -1006,6 +894,14 @@ if __name__ == '__main__':
     # for op, cost in cost_dict.items():
         # print(f'{op.__name__}\t\t{cost_dict[op]}\t{dipole_cost_dict[op]}')
 
-    vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=200000, cost_dict=cost_dict, cost_bound=None, check_goals=True)
+    # operators = get_operators()
+    # vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=200000, cost_dict=cost_dict, cost_bound=None, check_goals=True)
 
-    # library_learn(all_task_solution_expressions())
+    # res = library_learn(no_hat_expressions())
+    # import pdb
+    # pdb.set_trace()
+
+    test_pretty_print_to_expr()
+
+
+

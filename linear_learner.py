@@ -64,14 +64,41 @@ def normalize_array(x):
     return round_to_sigfigs(x, sigfigs=2)
 
 
+def base_operators(dimension=3):
+
+    operators = [
+        Divide,
+        Outer,
+        ScaleInverse,
+
+        Hat,
+
+        Length,
+        Scale,
+        Inner,
+        Times,
+    ]
+
+    if dimension == 3: operators.extend([
+        Skew,
+        Cross,
+    ])
+
+    return operators
+
+
 class AccelerationLearner():
-    def __init__(self, dimension, alpha, penalty, basis, cutoff, cost_dict=None):
+    def __init__(self, dimension, alpha, penalty, basis, cutoff, cost_dict=None, library_ops=None):
         self.alpha = alpha
         self.dimension = dimension
         self.penalty = penalty
         self.cutoff = cutoff
+        self.operators = base_operators(dimension)
+        self.library_ops = library_ops
 
-        print('Ops: ', [op.__name__ for op in get_operators(dimension)])
+        print('Ops: ', [op.__name__ for op in self.operators])
+        if self.library_ops:
+            print('Learned ops: ', [op.expr.pretty_print() for op in self.library_ops])
 
         if isinstance(basis, int):
             """
@@ -81,6 +108,7 @@ class AccelerationLearner():
             self.basis = {}
             # construct basis functions both for interaction forces and individual particle forces
             self.basis[(2,1)], self.basis[(2,2)] = construct_basis([], ["R", "V1", "V2"], basis,
+                                                                   self.get_all_operators(["R", "V1", "V2"]),
                                                                    dimension=dimension, cost_dict=cost_dict)
 
             # remove any interaction forces which do not involve both particles
@@ -94,7 +122,9 @@ class AccelerationLearner():
                                  if "R" in e.pretty_print() or \
                                  ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
 
+            print('ops: ' + str(self.get_all_operators(["V"])))
             self.basis[(1,1)], self.basis[(1,2)]  = construct_basis([], ["V"], basis,
+                                                                    self.get_all_operators(["V"]),
                                                                     dimension=dimension, cost_dict=cost_dict)
 
             # self.show_basis_function_counts()
@@ -102,6 +132,17 @@ class AccelerationLearner():
             assert isinstance(basis, dict)
             self.basis=basis
 
+    def get_all_operators(self, vectors):
+        # include library ops if their vector is in the list of vectors
+        def all_good_vectors(expr):
+            if type(expr) == Vector:
+                return expr.name in vectors
+            else:
+                return all([all_good_vectors(a) for a in expr.arguments()])
+
+        ops = list(self.operators)
+        ops += [op for op in self.library_ops if all_good_vectors(op.expr)]
+        return ops
 
     @property
     def basis_size(self):
@@ -150,8 +191,8 @@ class AccelerationLearner():
 
 
     def remove_from_basis(self, fns_to_remove):
-        valuation_dictionary = {(b, *rest): value
-                                for (b, *rest), value in valuation_dictionary.items()
+        self.valuation_dictionary = {(b, *rest): value
+                                for (b, *rest), value in self.valuation_dictionary.items()
                                 if b not in fns_to_remove}
         self.basis = {b_key: [b for b in b_value if b not in fns_to_remove]
                       for b_key, b_value in self.basis.items()}
@@ -168,7 +209,7 @@ class AccelerationLearner():
         when i=j, this is not an interaction force
         """
 
-        valuation_dictionary = {}
+        self.valuation_dictionary = {}
         T, N, D = x.shape
         assert D == self.dimension
 
@@ -204,7 +245,7 @@ class AccelerationLearner():
                             if "nan" in str(value) or "inf" in str(value):
                                 problematic_functions.add(b)
                             else:
-                                valuation_dictionary[(b,t,i,j)] = value
+                                self.valuation_dictionary[(b,t,i,j)] = value
                                 if b in valuation_dictionary2:
                                     valuation_dictionary2[b].append(value)
                                 else:
@@ -241,7 +282,7 @@ class AccelerationLearner():
                 else:
                     particle_pairs = [(i,j) for i in range(N) for j in range(N) if i != j]
 
-                sig = np.stack([valuation_dictionary[(b, t, i, j)]
+                sig = np.stack([self.valuation_dictionary[(b, t, i, j)]
                                 for t in range(T)
                                 for i,j in particle_pairs])
                 sig = np.reshape(sig, -1)
@@ -261,7 +302,7 @@ class AccelerationLearner():
               "basis functions that are redundant")
         self.remove_from_basis(problematic_functions)
 
-        return valuation_dictionary
+        return self.valuation_dictionary
 
 
     def fit(self, x, v, a):
@@ -335,6 +376,11 @@ class AccelerationLearner():
             print(f"Basis shrunk. Reestimating with smaller basis of {len(surviving_functions)} functions")
             new_basis = {b_key: [b for b in b_value if b in surviving_functions ]
                          for b_key, b_value in self.basis.items()}
+            if len(surviving_functions) < 15:
+                for fn in surviving_functions:
+                    print(fn.pretty_print())
+
+
             return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis, self.cutoff).fit(x, v, a)
         else:
             print(" ==  == acceleration learning has converged, reestimating coefficients ==  == ")
@@ -389,10 +435,11 @@ if __name__ == '__main__':
     parser.add_argument("--simulation", "-s", default='magnet2')
     parser.add_argument("--alpha", "-a", default=1e-3, type=float, help="controls sparsity")
     parser.add_argument("--embed", "-e", default=False, action="store_true", help="embed in 3d")
-    parser.add_argument("--penalty", "-p", default=10, type=float,
+    parser.add_argument("--penalty", "-p", default=1.5, type=float,
                         help="penalty for introducing latent vectors")
     parser.add_argument("--animate", "-m", default=False, action="store_true")
     parser.add_argument("--basis", "-b", default=200, type=int, help="number of basis functions")
+    parser.add_argument("--basis2", "-b2", default=0, type=int, help="number of basis functions for second round. by default, will not do a second round")
     parser.add_argument("--latent", "-l", default=0, type=int, help="number of latent parameters to associate with each particle (in addition to its mass) ")
     parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
     parser.add_argument("--refit", "-r", action="store_true", help="refit with learned pcfg")
@@ -400,80 +447,95 @@ if __name__ == '__main__':
     parser.add_argument("--pcfg", default='none', type=str, help="pcfg to enumerate from")
     arguments = parser.parse_args()
 
-    for name, callback in [
-            ("drag3", simulate_drag3),
-            ("falling", simulate_falling),
-            ("orbit", simulate_circular_orbit),
-            ("orbit2", simulate_2_orbits),
-            ("drag1", simulate_drag1),
-            ("drag2", simulate_drag2),
-            ("magnet1", simulate_charge_in_uniform_magnetic_field),
-            ("magnet2", simulate_charge_dipole),
+    data_dict = {}
 
-    ]:
-        if arguments.simulation != name and arguments.simulation != 'all':
+    experiments = [
+        ("drag3", simulate_drag3),
+        ("falling", simulate_falling),
+        ("orbit", simulate_circular_orbit),
+        ("orbit2", simulate_2_orbits),
+        ("drag1", simulate_drag1),
+        ("drag2", simulate_drag2),
+        ("magnet1", simulate_charge_in_uniform_magnetic_field),
+        ("magnet2", simulate_charge_dipole),
+    ]
 
-            continue
+    if arguments.simulation != 'all':
+        experiments = [(name, callback) for name, callback in experiments
+                                        if name == arguments.simulation]
 
-        print(f"Testing physics learner on {name}")
-        x, v, f, a = callback()
-
+    for name, callback in experiments:
+        # x, v, f, a = callback()
+        data_dict[name] = callback()
         print(f"simulated {name} data")
 
         if arguments.animate:
             animate(x[::x.shape[0]//100], fn=name)
             print(f"animated physics into {name}")
 
-        dimension = 3 if arguments.embed else x.shape[-1]
 
-        if arguments.pcfg == 'none':
-            pcfg = None
-        elif arguments.pcfg == 'dipole':
-            pcfg = dipole_cost_dict()
-        elif arguments.pcfg == 'all':
-            pcfg = fit_pcfg(all_task_solution_expressions(), get_operators(dimension))
-        elif arguments.pcfg == 'all_const':
-            pcfg = fit_pcfg(all_task_solution_expressions_with_abstraction_const(), get_operators(dimension))
-        else:
-            raise ValueError(f'Unknown pcfg: {arguments.pcfg}')
+    iters = 2 if arguments.basis2 > 0 else 1
+    def basis_size(iter):
+        if iter == 0: return arguments.basis
+        if iter == 1: return arguments.basis2
+        assert False
 
-        al = AccelerationLearner(dimension,
-                                 arguments.alpha,
-                                 arguments.penalty,
-                                 arguments.basis,
-                                 arguments.cutoff,
-                                 pcfg)
+    library_ops = [abstraction(pretty_print_to_expr('(v/ (hat R) (dp R R))'))]
+    library_ops = [abstraction(pretty_print_to_expr('(v/ R (len (v* (dp R R) R)))'))]
+    is_experiment_solved = {name: False for name, callback in experiments}
 
-        al = al.fit(x, v, a)
+    for iteration in range(iters):
+        expressions = []
 
-        if arguments.refit:
-            basis_functions = list({(bf, len({i,j}))
-                                    for terms in al.acceleration_laws
-                                    for bf, i, j, *rest in terms })
+        for name, callback in experiments:
+            if is_experiment_solved[name]:
+                continue
+            print(f'Testing physics learner on {name}')
 
-            operators = get_operators(dimension)
-            cost_dict = fit_pcfg([bf for bf, _ in basis_functions], operators)
+            x, v, f, a = data_dict[name]
+            dimension = 3 if arguments.embed else x.shape[-1]
 
-            for op in cost_dict:
-                print(f'{op}\t{op.return_type}\t\t{cost_dict[op]}')
-
-            print('repeating with new pcfg')
+            if arguments.pcfg == 'none':
+                pcfg = None
+            elif arguments.pcfg == 'dipole':
+                pcfg = dipole_cost_dict()
+            elif arguments.pcfg == 'all':
+                pcfg = fit_pcfg(all_task_solution_expressions(), base_operators(dimension))
+            elif arguments.pcfg == 'all_const':
+                pcfg = fit_pcfg(all_task_solution_expressions_with_abstraction_const(), base_operators(dimension))
+            else:
+                raise ValueError(f'Unknown pcfg: {arguments.pcfg}')
 
             al = AccelerationLearner(dimension,
                                      arguments.alpha,
                                      arguments.penalty,
-                                     arguments.basis,
+                                     basis_size(iteration),
                                      arguments.cutoff,
-                                     cost_dict)
+                                     cost_dict=pcfg,
+                                     library_ops=library_ops)
+
             al = al.fit(x, v, a)
+            print()
+            exprs = []
+            num_terms = 0
+            for law in al.acceleration_laws:
+                for (expr, i, j, c) in law:
+                    exprs.append(expr)
+                    num_terms += sum(c != 0) if type(c) == np.ndarray else 1
 
-        # fl = ForceLearner(0, arguments.lines)
-        # fl.fit(al.acceleration_laws)
+            if num_terms < 10:
+                print(f'Final regression uses {num_terms} terms which is less than 10. Experiment "{name}" solved!')
+                is_experiment_solved[name] = True
+            else:
+                print(f'Final regression uses {num_terms} terms which is not less than 10. Experiment "{name}" not yet solved...')
 
 
-        print()
-        print()
-        print()
-        print()
-        print()
-        print()
+            expressions += exprs
+
+            # fl = ForceLearner(0, arguments.lines)
+            # fl.fit(al.acceleration_laws)
+
+        if iters > 1 and iteration == 0:
+            # library learning with the returned expressions
+            pretty_prints = library_learn(expressions)
+            library_ops = [abstraction(pretty_print_to_expr(s) for s in pretty_prints)]
