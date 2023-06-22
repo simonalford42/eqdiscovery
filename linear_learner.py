@@ -480,9 +480,8 @@ if __name__ == '__main__':
         if iter == 1: return arguments.basis2
         assert False
 
-    library_ops = [abstraction(pretty_print_to_expr('(v/ (hat R) (dp R R))'))]
-    library_ops = [abstraction(pretty_print_to_expr('(v/ R (len (v* (dp R R) R)))'))]
     is_experiment_solved = {name: False for name, callback in experiments}
+    library_ops = []
 
     for iteration in range(iters):
         expressions = []
@@ -524,10 +523,10 @@ if __name__ == '__main__':
                     num_terms += sum(c != 0) if type(c) == np.ndarray else 1
 
             if num_terms < 10:
-                print(f'Final regression uses {num_terms} terms which is less than 10. Experiment "{name}" solved!')
+                print(f'{num_terms} terms < 10 ==> Experiment "{name}" solved!')
                 is_experiment_solved[name] = True
             else:
-                print(f'Final regression uses {num_terms} terms which is not less than 10. Experiment "{name}" not yet solved...')
+                print(f'{num_terms} terms >= 10 ==> Experiment "{name}" not solved.')
 
 
             expressions += exprs
@@ -538,4 +537,4 @@ if __name__ == '__main__':
         if iters > 1 and iteration == 0:
             # library learning with the returned expressions
             pretty_prints = library_learn(expressions)
-            library_ops = [abstraction(pretty_print_to_expr(s) for s in pretty_prints)]
+            library_ops = [abstraction(pretty_print_to_expr(s)) for s in pretty_prints]

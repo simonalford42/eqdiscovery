@@ -256,22 +256,22 @@ class Hat(Expression):
 
 def abstraction(expr):
     class Abstraction(Expression):
-        return_type = expr.return_type
+        return_type = expr.__class__.return_type
         argument_types = []
 
-    def __init__(self):
-        self.expr = expr
+        def __init__(self):
+            self.expr = expr
 
-    def __str__(self):
-        return f"Abstraction({expr})"
+        def __str__(self):
+            return f"Abstraction({expr})"
 
-    def pretty_print(self):
-        return f"##"
+        def pretty_print(self):
+            return f"##"
 
-    def arguments(self): return []
+        def arguments(self): return []
 
-    def evaluate(self, environment):
-        return self.expr.evaluate(environment)
+        def evaluate(self, environment):
+            return self.expr.evaluate(environment)
 
     return Abstraction()
 
