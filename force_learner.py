@@ -29,12 +29,12 @@ class ForceLearner():
         coefficient_programs = {}
         for b, n_particles in basis_functions:
             assert b.return_type == "vector", "latent vectors not yet supported"
-            
+
             if n_particles == 1:
                 inputs = ["M"] + [f"L{l+1}" for l in range(self.n_latent) ]
             else:
                 inputs = ["M1", "M2"] + [f"L{l+1}_self" for l in range(self.n_latent) ] + [f"L{l+1}_other" for l in range(self.n_latent) ]
-                
+
             program = SLC(inputs, self.n_lines, components)
 
             # figure out the examples for this program
@@ -53,10 +53,13 @@ class ForceLearner():
 
                     constrain(predicted_acceleration_coefficient < coefficient+1e-2)
                     constrain(predicted_acceleration_coefficient > coefficient-1e-2)
-            
+
             coefficient_programs[b]=program
 
         model = solve()
+        if model is None:
+            print('No solution found for force learner')
+            return
 
         for b, program in coefficient_programs.items():
             print("Coefficient for", b.pretty_print(), "can be predicted using:")
@@ -67,5 +70,5 @@ class ForceLearner():
         for i in range(len(acceleration_laws)):
             text = f"particle {i}\t\t"+"\t".join(str(model[unobserved]) for unobserved in [masses[i]] + latent[i] )
             print(text)
-            
-        
+
+

@@ -5,6 +5,8 @@ from nbody import *
 from magnet import *
 from animate import animate
 from enumerate_expressions import *
+from boids import load_boids
+
 # from nearest_neighbor import FastNN
 from force_learner import *
 import numpy as np
@@ -267,7 +269,8 @@ class AccelerationLearner():
             print("removing ", len(fns), "/", self.basis_size,
                   "basis functions that", cause)
 
-        bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
+        # bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
+        bad_functions = problematic_functions  # disable removing the other fns
         self.remove_from_basis(bad_functions)
 
         # Now let's figure out if any of the basis functions are just linear rescalings of others
@@ -426,6 +429,62 @@ class AccelerationLearner():
 
             return self
 
+
+def run_linear_learner(arguments, data_dict):
+    iters = 2 if arguments.basis2 > 0 else 1
+    def basis_size(iter):
+        if iter == 0: return arguments.basis
+        if iter == 1: return arguments.basis2
+        assert False
+
+    is_experiment_solved = {name: False for name in data_dict}
+    library_ops = []
+
+    for iteration in range(iters):
+        expressions = []
+
+        for name in data_dict:
+            if is_experiment_solved[name]:
+                continue
+            print(f'Testing physics learner on {name}')
+
+            x, v, f, a = data_dict[name]
+            dimension = 3 if arguments.embed else x.shape[-1]
+
+            al = AccelerationLearner(dimension,
+                                     arguments.alpha,
+                                     arguments.penalty,
+                                     basis_size(iteration),
+                                     arguments.cutoff,
+                                     library_ops=library_ops)
+
+            al = al.fit(x, v, a)
+            print()
+            exprs = []
+            num_terms = 0
+            for law in al.acceleration_laws:
+                for (expr, i, j, c) in law:
+                    exprs.append(expr)
+                    num_terms += sum(c != 0) if type(c) == np.ndarray else 1
+
+            if num_terms < 10:
+                print(f'Solved {name}')
+                is_experiment_solved[name] = True
+            else:
+                print(f'Did not solve {name}')
+
+            expressions += exprs
+
+            if arguments.force:
+                fl = ForceLearner(0, arguments.lines)
+                fl.fit(al.acceleration_laws)
+
+        if iters > 1 and iteration == 0:
+            # library learning with the returned expressions
+            pretty_prints = library_learn(expressions)
+            library_ops = [abstraction(pretty_print_to_expr(s)) for s in pretty_prints]
+
+
 if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
@@ -442,12 +501,10 @@ if __name__ == '__main__':
     parser.add_argument("--basis2", "-b2", default=0, type=int, help="number of basis functions for second round. by default, will not do a second round")
     parser.add_argument("--latent", "-l", default=0, type=int, help="number of latent parameters to associate with each particle (in addition to its mass) ")
     parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
-    parser.add_argument("--refit", "-r", action="store_true", help="refit with learned pcfg")
-    parser.add_argument("--cutoff", "-c", default=1E-4, type=int, help="remove functions with coefficients below this value during sparse regression")
-    parser.add_argument("--pcfg", default='none', type=str, help="pcfg to enumerate from")
-    arguments = parser.parse_args()
+    parser.add_argument("--cutoff", "-c", default=1E-4, type=float, help="remove functions with coefficients below this value during sparse regression")
+    parser.add_argument("--force", '-f', action="store_true", help="run force learning")
 
-    data_dict = {}
+    arguments = parser.parse_args()
 
     experiments = [
         ("drag3", simulate_drag3),
@@ -458,14 +515,17 @@ if __name__ == '__main__':
         ("drag2", simulate_drag2),
         ("magnet1", simulate_charge_in_uniform_magnetic_field),
         ("magnet2", simulate_charge_dipole),
+        ("boids", load_boids),
     ]
 
     if arguments.simulation != 'all':
         experiments = [(name, callback) for name, callback in experiments
                                         if name == arguments.simulation]
+        if len(experiments) == 0:
+            raise ValueError(f'Unknown simulation: {arguments.simulation}')
 
+    data_dict = {}
     for name, callback in experiments:
-        # x, v, f, a = callback()
         data_dict[name] = callback()
         print(f"simulated {name} data")
 
@@ -473,68 +533,4 @@ if __name__ == '__main__':
             animate(x[::x.shape[0]//100], fn=name)
             print(f"animated physics into {name}")
 
-
-    iters = 2 if arguments.basis2 > 0 else 1
-    def basis_size(iter):
-        if iter == 0: return arguments.basis
-        if iter == 1: return arguments.basis2
-        assert False
-
-    is_experiment_solved = {name: False for name, callback in experiments}
-    library_ops = []
-
-    for iteration in range(iters):
-        expressions = []
-
-        for name, callback in experiments:
-            if is_experiment_solved[name]:
-                continue
-            print(f'Testing physics learner on {name}')
-
-            x, v, f, a = data_dict[name]
-            dimension = 3 if arguments.embed else x.shape[-1]
-
-            if arguments.pcfg == 'none':
-                pcfg = None
-            elif arguments.pcfg == 'dipole':
-                pcfg = dipole_cost_dict()
-            elif arguments.pcfg == 'all':
-                pcfg = fit_pcfg(all_task_solution_expressions(), base_operators(dimension))
-            elif arguments.pcfg == 'all_const':
-                pcfg = fit_pcfg(all_task_solution_expressions_with_abstraction_const(), base_operators(dimension))
-            else:
-                raise ValueError(f'Unknown pcfg: {arguments.pcfg}')
-
-            al = AccelerationLearner(dimension,
-                                     arguments.alpha,
-                                     arguments.penalty,
-                                     basis_size(iteration),
-                                     arguments.cutoff,
-                                     cost_dict=pcfg,
-                                     library_ops=library_ops)
-
-            al = al.fit(x, v, a)
-            print()
-            exprs = []
-            num_terms = 0
-            for law in al.acceleration_laws:
-                for (expr, i, j, c) in law:
-                    exprs.append(expr)
-                    num_terms += sum(c != 0) if type(c) == np.ndarray else 1
-
-            if num_terms < 10:
-                print(f'{num_terms} terms < 10 ==> Experiment "{name}" solved!')
-                is_experiment_solved[name] = True
-            else:
-                print(f'{num_terms} terms >= 10 ==> Experiment "{name}" not solved.')
-
-
-            expressions += exprs
-
-            # fl = ForceLearner(0, arguments.lines)
-            # fl.fit(al.acceleration_laws)
-
-        if iters > 1 and iteration == 0:
-            # library learning with the returned expressions
-            pretty_prints = library_learn(expressions)
-            library_ops = [abstraction(pretty_print_to_expr(s)) for s in pretty_prints]
+    run_linear_learner(arguments, data_dict)
