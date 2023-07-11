@@ -568,7 +568,7 @@ def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None
             d[nm] = np.random.random(dimension)*10-5
         return d
 
-    inputs = [random_input() for _ in range(10) ]
+    inputs = [random_input() for _ in range(10)]
 
     vector_basis = []
     matrix_basis = []

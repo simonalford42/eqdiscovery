@@ -6,11 +6,14 @@ from magnet import *
 from animate import animate
 from enumerate_expressions import *
 from boids import load_boids
+from sklearn.linear_model import ElasticNet
+
 
 # from nearest_neighbor import FastNN
 from force_learner import *
 import numpy as np
 import random
+import utils
 
 def sparse_regression(X, y, alpha=1e-3, feature_cost=None):
     """short and modular helper function"""
@@ -31,7 +34,8 @@ def sparse_regression(X, y, alpha=1e-3, feature_cost=None):
     y = y/y_scale
 
     if alpha > 0:
-        model = Lasso(fit_intercept=False, alpha=alpha, max_iter=100000)
+        # model = Lasso(fit_intercept=False, alpha=alpha, max_iter=100000)
+        model = ElasticNet(alpha=alpha, l1_ratio=0.95)
     else:
         model = LinearRegression(fit_intercept=False)
 
@@ -158,6 +162,8 @@ class AccelerationLearner():
         for i in [1,2]:
             for j in [1,2]:
                 print(f"For {i} particles interacting, {j} basis indices:  {len(self.basis[(i,j)])} functions")
+                # for b in self.basis[(i,j)]:
+                    # print('\t' + b.pretty_print())
 
     def show_laws(self):
         print()
@@ -198,7 +204,7 @@ class AccelerationLearner():
                                 if b not in fns_to_remove}
         self.basis = {b_key: [b for b in b_value if b not in fns_to_remove]
                       for b_key, b_value in self.basis.items()}
-        self.check_goal_exprs_present_in_basis()
+        # self.check_goal_exprs_present_in_basis()
         print('New basis size: ', self.basis_size)
 
 
@@ -216,7 +222,7 @@ class AccelerationLearner():
         assert D == self.dimension
 
         problematic_functions = set() # these are features that give nan/infs, or are otherwise invalid
-        self.check_goal_exprs_present_in_basis()
+        # self.check_goal_exprs_present_in_basis()
 
         if N == 1:
             problematic_functions = {b
@@ -269,8 +275,8 @@ class AccelerationLearner():
             print("removing ", len(fns), "/", self.basis_size,
                   "basis functions that", cause)
 
-        # bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
-        bad_functions = problematic_functions  # disable removing the other fns
+        bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
+        # bad_functions = problematic_functions  # disable removing the other fns
         self.remove_from_basis(bad_functions)
 
         # Now let's figure out if any of the basis functions are just linear rescalings of others
@@ -326,6 +332,7 @@ class AccelerationLearner():
 
         # see comment for structure of valuations
         valuations = self.evaluate_basis_functions(x, v)
+        self.valuations = valuations
 
         # Construct the regression problem
         # We are predicting acceleration
@@ -358,6 +365,16 @@ class AccelerationLearner():
 
         X_matrix = np.array([ [ fd.get(f, 0.) for f in feature_names ] for fd in X ])
         Y = np.array(Y)
+        print(f'{X_matrix.shape=}')
+        print(f'{Y.shape=}')
+        print(f'{(T, N, D)}=')
+
+        def f(i,j): return len(self.basis[(i,j)])
+
+        n = (N*N - N) * (f(2,1) + D * f(2,2)) + N * (f(1,1) + D * f(1,2))
+        print(f'{n=}')
+
+        assert False
 
         feature_cost = [ self.penalty*int(basis_function.return_type == "matrix") + 1
                          for (basis_function, *rest) in feature_names ]
@@ -439,6 +456,7 @@ def run_linear_learner(arguments, data_dict):
 
     is_experiment_solved = {name: False for name in data_dict}
     library_ops = []
+    # library_ops = [abstraction(pretty_print_to_expr('(v/ (hat R) (dp R R))'))]
 
     for iteration in range(iters):
         expressions = []
@@ -448,7 +466,7 @@ def run_linear_learner(arguments, data_dict):
                 continue
             print(f'Testing physics learner on {name}')
 
-            x, v, f, a = data_dict[name]
+            x, v, _, a = data_dict[name]
             dimension = 3 if arguments.embed else x.shape[-1]
 
             al = AccelerationLearner(dimension,
@@ -479,10 +497,21 @@ def run_linear_learner(arguments, data_dict):
                 fl = ForceLearner(0, arguments.lines)
                 fl.fit(al.acceleration_laws)
 
+            if arguments.animate_learned and iteration == iters-1:
+                # animate using the learned laws
+                x = simulate_learned_laws(x[-1], v[-1], al.acceleration_laws, steps=x.shape[0], dt=0.01)
+                for i in range(x.shape[1]):
+                    animate(x[:, i:i+1, :], name + str(i))
+
+
+
+
         if iters > 1 and iteration == 0:
             # library learning with the returned expressions
             pretty_prints = library_learn(expressions)
             library_ops = [abstraction(pretty_print_to_expr(s)) for s in pretty_prints]
+
+
 
 
 if __name__ == '__main__':
@@ -503,8 +532,12 @@ if __name__ == '__main__':
     parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
     parser.add_argument("--cutoff", "-c", default=1E-4, type=float, help="remove functions with coefficients below this value during sparse regression")
     parser.add_argument("--force", '-f', action="store_true", help="run force learning")
+    parser.add_argument("--noise", '-n', action="store_true", help="add noise to the data")
+    parser.add_argument("--noise_intensity", '-ni', default=0.01 , type=float, help="std of noise to add to the data")
+    parser.add_argument("--animate_learned", '-al', action='store_true', help='animate the learned acceleration laws')
 
     arguments = parser.parse_args()
+    print(f'{arguments=}')
 
     experiments = [
         ("drag3", simulate_drag3),
@@ -515,7 +548,8 @@ if __name__ == '__main__':
         ("drag2", simulate_drag2),
         ("magnet1", simulate_charge_in_uniform_magnetic_field),
         ("magnet2", simulate_charge_dipole),
-        ("boids", load_boids),
+        ("boids", lambda: load_boids(1)),
+        ("spring", simulate_elastic_pendulum),
     ]
 
     if arguments.simulation != 'all':
@@ -523,14 +557,23 @@ if __name__ == '__main__':
                                         if name == arguments.simulation]
         if len(experiments) == 0:
             raise ValueError(f'Unknown simulation: {arguments.simulation}')
+    else:
+        experiments = [e for e in experiments if e[0] not in ['spring', 'boids']]
 
     data_dict = {}
     for name, callback in experiments:
         data_dict[name] = callback()
+
+        if arguments.noise:
+            data_dict[name] = utils.noisify(data_dict[name], intensity=arguments.noise_intensity)
+
         print(f"simulated {name} data")
 
         if arguments.animate:
-            animate(x[::x.shape[0]//100], fn=name)
-            print(f"animated physics into {name}")
+            x, _, _, _ = data_dict[name]
+            # animate(x[::x.shape[0]//100], fn=name)
+            animate_spring(x[::x.shape[0]//100])
+            print(f"animated spring")
+            import sys; sys.exit(0)
 
     run_linear_learner(arguments, data_dict)
