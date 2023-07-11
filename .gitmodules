@@ -1,0 +1,3 @@
+[submodule "PyNBoids"]
+	path = PyNBoids
+	url = https://github.com/simonalford42/PyNBoids
