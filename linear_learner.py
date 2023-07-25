@@ -6,7 +6,9 @@ from magnet import *
 from animate import animate
 from enumerate_expressions import *
 from boids import load_boids
-from sklearn.linear_model import ElasticNet
+from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet
+from sklearn import preprocessing
+import group_lasso
 
 
 # from nearest_neighbor import FastNN
@@ -15,11 +17,8 @@ import numpy as np
 import random
 import utils
 
-def sparse_regression(X, y, alpha=1e-3, feature_cost=None):
+def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False):
     """short and modular helper function"""
-    from sklearn.linear_model import LinearRegression, Lasso, Ridge
-    from sklearn import preprocessing
-
     scaler = preprocessing.StandardScaler(with_mean=False).fit(X)
 
     if feature_cost:
@@ -29,24 +28,52 @@ def sparse_regression(X, y, alpha=1e-3, feature_cost=None):
         scaler.scale_ *= np.array(feature_cost)
 
     X = scaler.transform(X)
-
     y_scale = np.mean(y*y)**0.5
     y = y/y_scale
 
-    if alpha > 0:
-        # model = Lasso(fit_intercept=False, alpha=alpha, max_iter=100000)
-        model = ElasticNet(alpha=alpha, l1_ratio=0.95)
+    if mirror:
+        assert groups is not None
+        # all features in the same group get summed to a new feature.
+        # after regressing, we use the resulting coefficient for each feature.
+        A, B = X.shape
+        G = max(groups) + 1
+        assert_equal(B, len(groups))
+        X2 = np.zeros((A, G))
+        for g in range(G):
+            group_indices = np.where(groups == g)[0]
+            X2[:,g] = np.sum(X[:,group_indices], -1)
+
+        model = Lasso(fit_intercept=False, alpha=alpha, max_iter=100000)
+        model.fit(X2, y)
+        coefficients = np.zeros(B)
+        for g in range(G):
+            group_indices = np.where(groups == g)[0]
+            coefficients[group_indices] = model.coef_[g]
+
+        print(" ==  == finished (mirrored) sparse regression ==  == ")
+        print("rank", LinearRegression(fit_intercept=False).fit(X2, y).rank_, "/", min(X2.shape))
+        print("score", model.score(X2, y))
+        print()
+
     else:
-        model = LinearRegression(fit_intercept=False)
 
-    model.fit(X, y)
+        if groups is not None:
+            model = group_lasso.GroupLasso(l1_reg=alpha, groups=groups, fit_intercept=False, group_reg=0.05)
+        if alpha > 0:
+            model = Lasso(fit_intercept=False, alpha=alpha, max_iter=100000)
+            # model = ElasticNet(alpha=alpha, l1_ratio=0.95)
+        else:
+            model = LinearRegression(fit_intercept=False)
 
-    print(" ==  == finished sparse regression ==  == ")
-    print("rank", LinearRegression(fit_intercept=False).fit(X, y).rank_, "/", min(X.shape))
-    print("score", model.score(X, y))
-    print()
+        model.fit(X, y)
+        coefficients = model.coef_
 
-    return y_scale*model.coef_ / scaler.scale_
+        print(" ==  == finished sparse regression ==  == ")
+        print("rank", LinearRegression(fit_intercept=False).fit(X, y).rank_, "/", min(X.shape))
+        print("score", model.score(X, y))
+        print()
+
+    return y_scale * coefficients / scaler.scale_
 
 
 def arrays_proportional(x, y, tolerance=0.02):
@@ -339,6 +366,17 @@ class AccelerationLearner():
         Y = []
         X = []
 
+        # make group ids for the different basis functions
+        # we put all of the basis terms of the same eq but different particle targets into a group.
+        basis_ids = {}
+        current_id = 0
+        for i in [1,2]:
+            for j in [1,2]:
+                for b in self.basis[(i,j)]:
+                    if b not in basis_ids:
+                        basis_ids[b] = current_id
+                        current_id += 1
+
         for t in range(T):
             for i in range(N):
                 for d in range(D):
@@ -351,35 +389,33 @@ class AccelerationLearner():
                         # valuation is a vector (1-indexed)
                         # interaction multiplier is a scaler
                         for b in self.basis[(n_particles,1)]:
-                            feature_dictionary[(b,i,j)] = valuations[(b,t,i,j)][d]
+                            v = valuations[(b,t,i,j)][d]
+                            feature_dictionary[(b,i,j)] =  v
 
                         # valuation is a matrix (2-indexed)
                         # interaction multiplier is a vector
                         for b in self.basis[(n_particles,2)]:
                             for u in range(D):
-                                feature_dictionary[(b,i,j,u)] = valuations[(b,t,i,j)][d,u]
+                                v = valuations[(b,t,i,j)][d,u]
+                                feature_dictionary[(b,i,j,u)] = v
 
                     X.append(feature_dictionary)
 
         feature_names = list(sorted({ fn for fd in X for fn in fd.keys() }))
+        unique_fns = sorted(list(basis_ids.keys()))
+
+        if arguments.group or arguments.mirror:
+            groups = [basis_ids[b] for b, *rest in feature_names]
+        else:
+            groups = None
 
         X_matrix = np.array([ [ fd.get(f, 0.) for f in feature_names ] for fd in X ])
         Y = np.array(Y)
-        print(f'{X_matrix.shape=}')
-        print(f'{Y.shape=}')
-        print(f'{(T, N, D)}=')
-
-        def f(i,j): return len(self.basis[(i,j)])
-
-        n = (N*N - N) * (f(2,1) + D * f(2,2)) + N * (f(1,1) + D * f(1,2))
-        print(f'{n=}')
-
-        assert False
 
         feature_cost = [ self.penalty*int(basis_function.return_type == "matrix") + 1
                          for (basis_function, *rest) in feature_names ]
 
-        coefficients = sparse_regression(X_matrix, Y, alpha=self.alpha, feature_cost=feature_cost)
+        coefficients = sparse_regression(X_matrix, Y, alpha=arguments.alpha, feature_cost=feature_cost, groups=groups, mirror=arguments.mirror)
 
         model = [(coefficients[feature_index], feature_name)
                  for feature_index, feature_name in enumerate(feature_names)
@@ -405,7 +441,8 @@ class AccelerationLearner():
         else:
             print(" ==  == acceleration learning has converged, reestimating coefficients ==  == ")
 
-            coefficients = sparse_regression(X_matrix, Y, alpha=0)
+            coefficients = sparse_regression(X_matrix, Y, alpha=0, groups=groups, mirror=arguments.mirror)
+
             model = [(coefficients[feature_index], feature_name)
                      for feature_index, feature_name in enumerate(feature_names)
                      if abs(coefficients[feature_index]) > 1e-3]
@@ -535,6 +572,8 @@ if __name__ == '__main__':
     parser.add_argument("--noise", '-n', action="store_true", help="add noise to the data")
     parser.add_argument("--noise_intensity", '-ni', default=0.01 , type=float, help="std of noise to add to the data")
     parser.add_argument("--animate_learned", '-al', action='store_true', help='animate the learned acceleration laws')
+    parser.add_argument("--group", '-g', action='store_true', help='run group lasso so that learned terms are same for different particle pairs')
+    parser.add_argument("--mirror", '-mi', action='store_true', help='learn identical laws for each particle')
 
     arguments = parser.parse_args()
     print(f'{arguments=}')
