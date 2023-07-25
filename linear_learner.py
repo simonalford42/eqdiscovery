@@ -389,15 +389,13 @@ class AccelerationLearner():
                         # valuation is a vector (1-indexed)
                         # interaction multiplier is a scaler
                         for b in self.basis[(n_particles,1)]:
-                            v = valuations[(b,t,i,j)][d]
-                            feature_dictionary[(b,i,j)] =  v
+                            feature_dictionary[(b,i,j)] =  valuations[(b,t,i,j)][d]
 
                         # valuation is a matrix (2-indexed)
                         # interaction multiplier is a vector
                         for b in self.basis[(n_particles,2)]:
                             for u in range(D):
-                                v = valuations[(b,t,i,j)][d,u]
-                                feature_dictionary[(b,i,j,u)] = v
+                                feature_dictionary[(b,i,j,u)] = valuations[(b,t,i,j)][d,u]
 
                     X.append(feature_dictionary)
 
@@ -435,7 +433,6 @@ class AccelerationLearner():
             if len(surviving_functions) < 15:
                 for fn in surviving_functions:
                     print(fn.pretty_print())
-
 
             return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis, self.cutoff).fit(x, v, a)
         else:
