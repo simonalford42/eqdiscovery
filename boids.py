@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 from random import randint
+import os
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame as pg
 import numpy as np
+import utils
 '''
 PixelBoids - Pixel-based Boids simulation, drawn to a surfArray.
 Uses numpy array math instead of math lib. github.com/Nikorasu/PyNBoids
 Copyright (c) 2021  Nikolaus Stromberg  nikorasu85@gmail.com
 '''
 FLLSCRN = True          # True for Fullscreen, or False for Window
-BOIDZ = 35             # Number of Boids
+BOIDZ = 3             # Number of Boids
 WIDTH = 700            # Window Width (1200)
 HEIGHT = 400            # Window Height (800)
 PRATIO = 5              # Pixel Ratio for surfArray
@@ -56,7 +59,9 @@ class BoidPix():
             tAvejAng = np.rad2deg(np.arctan2(yat, xat))
             targetV = (np.mean(neiboids[:,0]), np.mean(neiboids[:,1]))
             # if too close, move away from closest neighbor
-            if neiboids[0,3] < 4 : targetV = (neiboids[0,0], neiboids[0,1])
+            if neiboids[0,3] < 4 :
+                print('repulsed')
+                targetV = (neiboids[0,0], neiboids[0,1])
             # get angle differences for steering
             tDiff = pg.Vector2(targetV) - self.pos
             tDistance, tAngle = pg.math.Vector2.as_polar(tDiff)
@@ -67,26 +72,30 @@ class BoidPix():
             if abs(tAngle - self.ang) > 1: turnDir = (angleDiff/360 - (angleDiff//360)) * 360 - 180
             # if boid gets too close to target, steer away
             if tDistance < 4 and targetV == (neiboids[0,0], neiboids[0,1]) : turnDir = -turnDir
-        if not ejWrap and min(self.pos[0], self.pos[1], self.maxW - self.pos[0], self.maxH - self.pos[1]) < margin:
-            if self.pos[0] < margin : tAngle = 0
-            elif self.pos[0] > self.maxW - margin : tAngle = 180
-            if self.pos[1] < margin : tAngle = 90
-            elif self.pos[1] > self.maxH - margin : tAngle = 270
-            angleDiff = (tAngle - self.ang) + 180  # if in margin, increase turnRate to ensure stays on screen
-            turnDir = (angleDiff / 360 - (angleDiff // 360)) * 360 - 180
-            edgeDist = min(self.pos[0], self.pos[1], self.maxW - self.pos[0], self.maxH - self.pos[1])
-            turnRate = turnRate + (1 - edgeDist / margin) * (20 - turnRate) #minRate+(1-dist/margin)*(maxRate-minRate)
+        # if not ejWrap and min(self.pos[0], self.pos[1], self.maxW - self.pos[0], self.maxH - self.pos[1]) < margin:
+            # if self.pos[0] < margin : tAngle = 0
+            # elif self.pos[0] > self.maxW - margin : tAngle = 180
+            # if self.pos[1] < margin : tAngle = 90
+            # elif self.pos[1] > self.maxH - margin : tAngle = 270
+            # angleDiff = (tAngle - self.ang) + 180  # if in margin, increase turnRate to ensure stays on screen
+            # turnDir = (angleDiff / 360 - (angleDiff // 360)) * 360 - 180
+            # edgeDist = min(self.pos[0], self.pos[1], self.maxW - self.pos[0], self.maxH - self.pos[1])
+            # turnRate = turnRate + (1 - edgeDist / margin) * (20 - turnRate) #minRate+(1-dist/margin)*(maxRate-minRate)
+
         # Steers based on turnDir, handles left or right
         if turnDir != 0:
             self.ang += turnRate * abs(turnDir) / turnDir # turn speed 10
             self.ang %= 360  # keeps angle within 0-360
         self.dir = pg.Vector2(1, 0).rotate(self.ang).normalize()
         self.pos += self.dir * dt * (speed + (7 - neiboids.size) / 14)  # forward speed
+
         # Edge Wrap
-        if self.pos[1] < 1 : self.pos[1] = self.maxH - 1
-        elif self.pos[1] > self.maxH : self.pos[1] = 1
-        if self.pos[0] < 1 : self.pos[0] = self.maxW - 1
-        elif self.pos[0] > self.maxW : self.pos[0] = 1
+
+        # if self.pos[1] < 1 : self.pos[1] = self.maxH - 1
+        # elif self.pos[1] > self.maxH : self.pos[1] = 1
+        # if self.pos[0] < 1 : self.pos[0] = self.maxW - 1
+        # elif self.pos[0] > self.maxW : self.pos[0] = 1
+
         # Finally, output pos/ang to arrays
         self.data.b_array[self.bnum,:3] = [self.pos[0], self.pos[1], self.ang]
         self.data.img_array[(int(self.pos[0]), int(self.pos[1]))] = self.color[:3]
@@ -150,14 +159,17 @@ def main():
             a.append(a_t)
             v.append(v_t)
 
-        # if len(x) == 200:
-            # x = np.array(x)
-            # v = np.array(v)
-            # a = np.array(a)
-            # arr = np.stack([x, v, a])
-            # print(f'{arr.shape=}')
-            # np.save("boids_data.npy", arr)
-            # return
+        # print(len(x))
+        if len(x) == 150:
+            x = np.array(x)
+            v = np.array(v)
+            a = np.array(a)
+            arr = np.stack([x, v, a])
+            print(f'{arr.shape=}')
+            path = utils.next_unused_path('boids_data/boids_data.npy')
+            np.save(path, arr)
+            print(f'saved to {path}')
+            return path
 
         drawImg = drawLayer.update(dt)
         # resizes and draws the surfArray to screen
@@ -170,22 +182,23 @@ def main():
 
 
 def save_boids():
-    main()  # by Nik
+    path = main()  # by Nik
     pg.quit()
+    return path
 
 
 def load_boids(i=4):
-    arr = np.load(f"boids_data/boids_data{i}.npy")
+    arr = np.load(f"boids_data/boids_data_{i}.npy")
     T = arr.shape[1]
-    assert arr.shape == (3, T, 3, 2)
+    # assert arr.shape == (3, T, BOIDZ, 2)
     x, v, a = arr
     return x, v, None, a
 
-def animate(x):
+def animate(x, i=None):
     from matplotlib import pyplot as plt
     import os
     T = len(x)
-    assert x.shape == (T, 3, 2)  # T, n_boidz, dims
+    assert x.shape == (T, BOIDZ, 2)  # T, n_boidz, dims
     # minx, maxx = 0, WIDTH
     # miny, maxy = 0, HEIGHT
     buffer = 10
@@ -207,9 +220,15 @@ def animate(x):
     print('done')
 
 
-    os.system(f"gm convert -delay 5 -loop 0 /tmp/boids_*.png boids.gif")
+    if i is None:
+        path = utils.next_unused_path('boids_data/boids.gif')
+    else:
+        path = f'boids_data/boids_{i}.gif'
+    os.system(f"gm convert -delay 5 -loop 0 /tmp/boids_*.png {path}")
+    print('animation saved to', path)
 
 if __name__ == '__main__':
-    save_boids()
-    # x, v, a = load_boids()
-    # animate(x)
+    path = save_boids()
+    i = int(path.split('_')[-1].split('.')[0])
+    x, v, _, a = load_boids(i)
+    animate(x, i)

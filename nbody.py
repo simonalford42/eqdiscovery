@@ -4,59 +4,73 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utils import assert_equal, assert_shape
 
+X_VALUES = None
+DX_VALUES = None
+DV_VALUES = None
+V_VALUES = None
+A_VALUES = None
+M_VALUES = None
 
 
-def simulate_learned_laws(init_x, init_v, laws, steps=100, dt=0.01):
+def simulate_learned_laws(init_x, init_v, laws, T=50, steps=100, dt=0.01):
     '''
     simulate a system of particles with given initial positions and velocities from the acceleration laws learned.
     '''
-    print(f'{steps=}')
+
     n_particles = init_x.shape[0]
     n_dims = init_x.shape[1]
     assert init_v.shape == (n_particles, n_dims)
     assert n_dims == 2, 'only 2D for now'
 
     # (n_particles, n_dims)
-    xs = [init_x]
-    v = init_v
+    x = [init_x]
+    v = [init_v]
+    a = []
 
-    for _ in range(steps):
-        # each particle has its own set of terms for its acceleration law
-        new_x = []
-        new_v = []
-        x = xs[-1]
-
+    for t in range(int(T/dt)):
+        accelerations = []
         for particle, terms in enumerate(laws):
-            a = np.zeros(n_dims)
+            a_i = np.zeros(n_dims)
             for (expr, i, j, c) in terms:
-                # goal: get acceleration contribution from this law
+                # get acceleration contribution from this law
                 # expr contains variables such as V, V1, V2, R, R1, R2
                 # based on acceleration show laws:
                 # 1. provide V_i as V to the environment
                 # 2. provide V_i as V1 and V_j as V2 to the environment
                 # 3. provide R_{ij} as R to the environment
                 # 4. everything else is provided "as is" to the environment
-                env = {'V': v[i],
-                       'V1': v[i], 'V2': v[j],
-                       'R': x[i]-x[j]}
+                env = {'V': v[-1][i],
+                       'V1': v[-1][i], 'V2': v[-1][j],
+                       'R': x[-1][i]-x[-1][j]}
                 val = expr.evaluate(env)
                 if expr.return_type == 'vector':
-                    a += val
+                    a_i += c * val
                 else:
                     assert expr.return_type == 'matrix'
                     # same thing as val @ c
                     # for the matrix result, m[d, u], d is the dimension axis and u is the coefficient axis
-                    a += np.einsum('ij, j -> i', val, c[:n_dims])
+                    a_i += np.einsum('ij, j -> i', val, c[:n_dims])
 
-            dv = a*dt
-            dx = v[particle]*dt
-            new_x.append(x[particle]+dx)
-            new_v.append(v[particle]+dv)
+            accelerations.append(a_i)
 
-        xs.append(np.stack(new_x))
-        v = np.stack(new_v)
+        accelerations = np.stack(accelerations)
+        # not sure why, but to get it to work, we need to negate
+        accelerations = -accelerations
 
-    return np.stack(xs)
+        dv = accelerations*dt
+        dx = v[-1]*dt
+
+        a.append(accelerations)
+        x.append(x[-1]+dx)
+        v.append(v[-1]+dv)
+
+    if steps is not None:
+        sampling_frequency = len(x)//steps
+        a = a[::sampling_frequency]
+        x = x[::sampling_frequency]
+        v = v[::sampling_frequency]
+
+    return np.stack(x)
 
 
 def animate_simon(x, name):
@@ -154,7 +168,7 @@ def simulate_gravity(masses, positions, velocities, T, steps=None,
     f = []
     a = []
 
-    for _ in range(int(T/dt)):
+    for t in range(int(T/dt)):
         forces = []
         for i in range(BODIES):
             force = np.zeros(D)
@@ -179,9 +193,11 @@ def simulate_gravity(masses, positions, velocities, T, steps=None,
                             force = force + drag_force
 
             forces.append(force)
+            # if t <= 2 and dt == 10:
+                # print(f'{force / masses[i]=}')
+
         forces = np.stack(forces)
         accelerations = forces/masses[:,None]
-
         dv = accelerations*dt
         dx = v[-1]*dt
 

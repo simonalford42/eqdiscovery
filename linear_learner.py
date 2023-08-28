@@ -17,11 +17,38 @@ import numpy as np
 import random
 import utils
 
+
 def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False):
     """short and modular helper function"""
+    if groups is not None:
+        num_groups = max(groups) + 1
+
+    if mirror:
+        if feature_cost is not None:
+            feature_cost2 = np.zeros(num_groups)
+
+        # all features in the same group get summed to a new feature.
+        # after regressing, we use the resulting coefficient for each feature.
+        X2 = np.zeros((len(X), num_groups))
+
+        for g in range(num_groups):
+            group_indices = np.where(groups == g)[0]
+
+            if feature_cost is not None:
+                costs = feature_cost[group_indices]
+                assert np.all(costs == costs[0])
+                feature_cost2[g] = costs[0]
+
+            X2[:,g] = np.sum(X[:,group_indices], -1)
+
+        old_X = X
+        X = X2
+        if feature_cost is not None:
+            feature_cost = feature_cost2
+
     scaler = preprocessing.StandardScaler(with_mean=False).fit(X)
 
-    if feature_cost:
+    if feature_cost is not None:
         # we expect array of costs for each feature
         # bigger cost is accomplished by making the feature values smaller during the lasso
         # this forces bigger coefficients to use those features
@@ -31,49 +58,32 @@ def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False)
     y_scale = np.mean(y*y)**0.5
     y = y/y_scale
 
-    if mirror:
-        assert groups is not None
-        # all features in the same group get summed to a new feature.
-        # after regressing, we use the resulting coefficient for each feature.
-        A, B = X.shape
-        G = max(groups) + 1
-        assert_equal(B, len(groups))
-        X2 = np.zeros((A, G))
-        for g in range(G):
-            group_indices = np.where(groups == g)[0]
-            X2[:,g] = np.sum(X[:,group_indices], -1)
-
+    if groups is not None:
+        model = group_lasso.GroupLasso(l1_reg=alpha, groups=groups, fit_intercept=False, group_reg=0.05)
+    if alpha > 0:
         model = Lasso(fit_intercept=False, alpha=alpha, max_iter=100000)
-        model.fit(X2, y)
-        coefficients = np.zeros(B)
-        for g in range(G):
-            group_indices = np.where(groups == g)[0]
-            coefficients[group_indices] = model.coef_[g]
-
-        print(" ==  == finished (mirrored) sparse regression ==  == ")
-        print("rank", LinearRegression(fit_intercept=False).fit(X2, y).rank_, "/", min(X2.shape))
-        print("score", model.score(X2, y))
-        print()
-
     else:
+        model = LinearRegression(fit_intercept=False)
 
-        if groups is not None:
-            model = group_lasso.GroupLasso(l1_reg=alpha, groups=groups, fit_intercept=False, group_reg=0.05)
-        if alpha > 0:
-            model = Lasso(fit_intercept=False, alpha=alpha, max_iter=100000)
-            # model = ElasticNet(alpha=alpha, l1_ratio=0.95)
-        else:
-            model = LinearRegression(fit_intercept=False)
+    model.fit(X, y)
+    coefficients = model.coef_
 
-        model.fit(X, y)
-        coefficients = model.coef_
+    print(" ==  == finished sparse regression ==  == ")
+    print("rank", LinearRegression(fit_intercept=False).fit(X, y).rank_, "/", min(X.shape))
+    print("score", model.score(X, y))
+    print()
 
-        print(" ==  == finished sparse regression ==  == ")
-        print("rank", LinearRegression(fit_intercept=False).fit(X, y).rank_, "/", min(X.shape))
-        print("score", model.score(X, y))
-        print()
+    coefficients = y_scale * coefficients / scaler.scale_
 
-    return y_scale * coefficients / scaler.scale_
+    if mirror:
+        # convert back to original basis
+        unmirrored_coeffs = np.zeros(old_X.shape[1])
+        for g in range(num_groups):
+            group_indices = np.where(groups == g)[0]
+            unmirrored_coeffs[group_indices] = coefficients[g]
+        coefficients = unmirrored_coeffs
+
+    return coefficients
 
 
 def arrays_proportional(x, y, tolerance=0.02):
@@ -97,39 +107,14 @@ def normalize_array(x):
     return round_to_sigfigs(x, sigfigs=2)
 
 
-def base_operators(dimension=3):
-
-    operators = [
-        Divide,
-        Outer,
-        ScaleInverse,
-
-        Hat,
-
-        Length,
-        Scale,
-        Inner,
-        Times,
-    ]
-
-    if dimension == 3: operators.extend([
-        Skew,
-        Cross,
-    ])
-
-    return operators
-
-
 class AccelerationLearner():
     def __init__(self, dimension, alpha, penalty, basis, cutoff, cost_dict=None, library_ops=None):
         self.alpha = alpha
         self.dimension = dimension
         self.penalty = penalty
         self.cutoff = cutoff
-        self.operators = base_operators(dimension)
         self.library_ops = library_ops
 
-        print('Ops: ', [op.__name__ for op in self.operators])
         if self.library_ops:
             print('Learned ops: ', [op.expr.pretty_print() for op in self.library_ops])
 
@@ -141,7 +126,7 @@ class AccelerationLearner():
             self.basis = {}
             # construct basis functions both for interaction forces and individual particle forces
             self.basis[(2,1)], self.basis[(2,2)] = construct_basis([], ["R", "V1", "V2"], basis,
-                                                                   self.get_all_operators(["R", "V1", "V2"]),
+                                                                   self.get_ops(["R", "V1", "V2"]),
                                                                    dimension=dimension, cost_dict=cost_dict)
 
             # remove any interaction forces which do not involve both particles
@@ -155,9 +140,8 @@ class AccelerationLearner():
                                  if "R" in e.pretty_print() or \
                                  ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
 
-            print('ops: ' + str(self.get_all_operators(["V"])))
             self.basis[(1,1)], self.basis[(1,2)]  = construct_basis([], ["V"], basis,
-                                                                    self.get_all_operators(["V"]),
+                                                                    self.get_ops(["V"]),
                                                                     dimension=dimension, cost_dict=cost_dict)
 
             # self.show_basis_function_counts()
@@ -165,7 +149,28 @@ class AccelerationLearner():
             assert isinstance(basis, dict)
             self.basis=basis
 
-    def get_all_operators(self, vectors):
+    def get_ops(self, vectors):
+
+        ops = [
+            Divide,
+            Outer,
+            ScaleInverse,
+
+            Hat,
+
+            Length,
+            Scale,
+            Inner,
+            Times,
+        ]
+
+        if 'R' in vectors: ops.extend([RInRadius4, RInRadius48,])
+
+        if self.dimension == 3: ops.extend([
+            Skew,
+            Cross,
+        ])
+
         # include library ops if their vector is in the list of vectors
         def all_good_vectors(expr):
             if type(expr) == Vector:
@@ -173,7 +178,6 @@ class AccelerationLearner():
             else:
                 return all([all_good_vectors(a) for a in expr.arguments()])
 
-        ops = list(self.operators)
         ops += [op for op in self.library_ops if all_good_vectors(op.expr)]
         return ops
 
@@ -368,13 +372,19 @@ class AccelerationLearner():
 
         # make group ids for the different basis functions
         # we put all of the basis terms of the same eq but different particle targets into a group.
+        # basis[(i, j)], i is the number of particles, j is the number of indices in the return value
         basis_ids = {}
         current_id = 0
-        for i in [1,2]:
-            for j in [1,2]:
-                for b in self.basis[(i,j)]:
-                    if b not in basis_ids:
-                        basis_ids[b] = current_id
+        for n_particles in [1,2]:
+            for b in self.basis[(n_particles, 1)]:
+                if b not in basis_ids:
+                    basis_ids[b] = current_id
+                    current_id += 1
+
+            for b in self.basis[(n_particles, 2)]:
+                for u in range(D):
+                    if (b, u) not in basis_ids:
+                        basis_ids[(b, u)] = current_id
                         current_id += 1
 
         for t in range(T):
@@ -400,18 +410,17 @@ class AccelerationLearner():
                     X.append(feature_dictionary)
 
         feature_names = list(sorted({ fn for fd in X for fn in fd.keys() }))
-        unique_fns = sorted(list(basis_ids.keys()))
 
         if arguments.group or arguments.mirror:
-            groups = [basis_ids[b] for b, *rest in feature_names]
+            groups = np.array([basis_ids[(b,u) if len(rest) == 2 else b] for b, *rest, u in feature_names])
         else:
             groups = None
 
         X_matrix = np.array([ [ fd.get(f, 0.) for f in feature_names ] for fd in X ])
         Y = np.array(Y)
 
-        feature_cost = [ self.penalty*int(basis_function.return_type == "matrix") + 1
-                         for (basis_function, *rest) in feature_names ]
+        feature_cost = np.array([ self.penalty*int(basis_function.return_type == "matrix") + 1
+                                for (basis_function, *rest) in feature_names ])
 
         coefficients = sparse_regression(X_matrix, Y, alpha=arguments.alpha, feature_cost=feature_cost, groups=groups, mirror=arguments.mirror)
 
@@ -533,11 +542,8 @@ def run_linear_learner(arguments, data_dict):
 
             if arguments.animate_learned and iteration == iters-1:
                 # animate using the learned laws
-                x = simulate_learned_laws(x[-1], v[-1], al.acceleration_laws, steps=x.shape[0], dt=0.01)
-                for i in range(x.shape[1]):
-                    animate(x[:, i:i+1, :], name + str(i))
-
-
+                x = simulate_learned_laws(x[0], v[0], al.acceleration_laws)
+                animate(x[::x.shape[0]//100], fn=name)
 
 
         if iters > 1 and iteration == 0:
@@ -584,7 +590,7 @@ if __name__ == '__main__':
         ("drag2", simulate_drag2),
         ("magnet1", simulate_charge_in_uniform_magnetic_field),
         ("magnet2", simulate_charge_dipole),
-        ("boids", lambda: load_boids(1)),
+        ("boids", lambda: load_boids(14)),
         ("spring", simulate_elastic_pendulum),
     ]
 
@@ -608,8 +614,8 @@ if __name__ == '__main__':
         if arguments.animate:
             x, _, _, _ = data_dict[name]
             # animate(x[::x.shape[0]//100], fn=name)
-            animate_spring(x[::x.shape[0]//100])
-            print(f"animated spring")
-            import sys; sys.exit(0)
+            # animate_spring(x[::x.shape[0]//100])
+            # print(f"animated spring")
+            # import sys; sys.exit(0)
 
     run_linear_learner(arguments, data_dict)

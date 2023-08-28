@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+import utils
 
 
 def animate(x, fn=None):
@@ -8,7 +9,7 @@ def animate(x, fn=None):
         return animate3(x, fn or "magnet")
     if x.shape[-1] == 2:
         return animate2(x, fn or "gravity")
-    
+
 
 def animate3(x, fn="magnet"):
     os.system("rm /tmp/magnet*png")
@@ -30,8 +31,10 @@ def animate3(x, fn="magnet"):
 
         plt.savefig("/tmp/magnet_%03d.png"%t)
         plt.close()
-    
-    os.system(f"gm convert -delay 5 -loop 0 /tmp/magnet_*.png /tmp/{fn}.gif")
+
+    path = utils.next_unused_path(f"animations/{fn}.gif")
+    os.system(f"gm convert -delay 5 -loop 0 /tmp/magnet_*.png '{path}'")
+    print(f'saved fig at {path}')
 
 def animate2(x, fn='gravity', other=None):
     os.system("rm /tmp/gravity*png")
@@ -49,8 +52,8 @@ def animate2(x, fn='gravity', other=None):
         smallest = min(smallest, other_smallest)
         biggest = max(biggest, other_biggest)
         T = min(T, other.shape[0])
-    
-    
+
+
     for t in range(T):
         plt.figure()
         plt.xlim([smallest, biggest])
@@ -60,8 +63,10 @@ def animate2(x, fn='gravity', other=None):
         if other is not None:
             plt.scatter(other[t,:,0], other[t,:,1], c="r", label="actual")
             plt.legend(loc="upper left")
-        
+
         plt.savefig("/tmp/gravity_%03d.png"%t)
         plt.close()
-    
-    os.system(f"gm convert -delay 5 -loop 0 /tmp/gravity_*.png /tmp/{fn}.gif")
+
+    path = utils.next_unused_path(f"animations/{fn}.gif")
+    os.system(f"gm convert -delay 5 -loop 0 /tmp/gravity_*.png '{path}'")
+    print(f'saved fig at {path}')
