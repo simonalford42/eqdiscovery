@@ -9,6 +9,7 @@ from boids import load_boids
 from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet
 from sklearn import preprocessing
 import group_lasso
+from locusts import load_locusts
 
 
 # from nearest_neighbor import FastNN
@@ -16,14 +17,18 @@ from force_learner import *
 import numpy as np
 import random
 import utils
+import einops
 
 
-def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False):
+def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False, group_reg=None, l1_reg=None):
     """short and modular helper function"""
     if groups is not None:
         num_groups = max(groups) + 1
 
     if mirror:
+        '''
+        learn the exact same law for each
+        '''
         if feature_cost is not None:
             feature_cost2 = np.zeros(num_groups)
 
@@ -59,7 +64,11 @@ def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False)
     y = y/y_scale
 
     if groups is not None:
-        model = group_lasso.GroupLasso(l1_reg=alpha, groups=groups, fit_intercept=False, group_reg=0.05)
+        if l1_reg is None:
+            l1_reg = alpha
+        if group_reg is None:
+            group_reg = alpha
+        model = group_lasso.GroupLasso(l1_reg=l1_reg, groups=groups, fit_intercept=False, group_reg=group_reg)
     if alpha > 0:
         model = Lasso(fit_intercept=False, alpha=alpha, max_iter=100000)
     else:
@@ -91,7 +100,13 @@ def arrays_proportional(x, y, tolerance=0.02):
     assert x.shape == y.shape
 
     k = x/y
-    k = np.mean(k[np.isfinite(k)])
+    try:
+        k = np.mean(k[np.isfinite(k)])
+    except TypeError as e:
+        print(k)
+        import pdb
+        pdb.set_trace()
+        raise e
     return np.max(np.abs(k*y-x)) < tolerance*np.max(np.abs(x))
 
 
@@ -164,7 +179,7 @@ class AccelerationLearner():
             Times,
         ]
 
-        if 'R' in vectors: ops.extend([RInRadius4, RInRadius48,])
+        # if 'R' in vectors: ops.extend([RInRadius4, RInRadius48,])
 
         if self.dimension == 3: ops.extend([
             Skew,
@@ -196,12 +211,25 @@ class AccelerationLearner():
                 # for b in self.basis[(i,j)]:
                     # print('\t' + b.pretty_print())
 
-    def show_laws(self):
+    def print_model(self, model, split=False):
+        if split:
+            for w, (basis_expression, t, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
+                print(w, "\t", t, "\t", basis_expression.pretty_print(), "\t", *object_indices)
+        else:
+            for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
+                print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
+
+    def show_laws(self, split=False):
         print()
         for i, terms in enumerate(self.acceleration_laws):
 
             pretty_terms = []
-            for basis_function, i, j, coefficient in terms:
+            for term in terms:
+                if split:
+                    basis_function, t, i, j, coefficient = term
+                else:
+                    basis_function, i, j, coefficient = term
+
                 pretty = basis_function.pretty_print()
                 if i == j:
                     pretty = pretty.replace("V", f"V_{i}")
@@ -216,7 +244,8 @@ class AccelerationLearner():
                     assert False
                 pretty_terms.append(pretty)
 
-            print(f"a_{i} = {' + '.join(pretty_terms)}")
+            start = f"a_{i}" if not split else f"a_{i}_{t}"
+            print(start + f" = {' + '.join(pretty_terms)}")
 
     def check_goal_exprs_present_in_basis(self):
         matches = 0
@@ -399,7 +428,7 @@ class AccelerationLearner():
                         # valuation is a vector (1-indexed)
                         # interaction multiplier is a scaler
                         for b in self.basis[(n_particles,1)]:
-                            feature_dictionary[(b,i,j)] =  valuations[(b,t,i,j)][d]
+                            feature_dictionary[(b,i,j)] = valuations[(b,t,i,j)][d]
 
                         # valuation is a matrix (2-indexed)
                         # interaction multiplier is a vector
@@ -419,6 +448,33 @@ class AccelerationLearner():
         X_matrix = np.array([ [ fd.get(f, 0.) for f in feature_names ] for fd in X ])
         Y = np.array(Y)
 
+        if arguments.split:
+            '''
+            Split up basis functions into different time segments (zero padding outside that segment)
+            and have a group for each original basis function consisting of the different time segments.
+            then run group lasso. this way, the model tries to minimize the number of total basis functions,
+            but is allowed to do whatever it wants when fitting a given time segment.
+            '''
+            F = X_matrix.shape[1]
+            L = arguments.split_length
+            assert T % L == 0, f"T must be divisible by L, but T={T}, and L={L}"
+            T1 = int(T / L)
+            X_matrix = einops.repeat(X_matrix, 'TND F -> TND F R', R=T1)
+            X_matrix = einops.rearrange(X_matrix, '(T ND) F R -> T ND F R', T=T)
+            # if array of length T is split up into T1 chunks of length L,
+            # then the t'th chunk has indices [t*L, (t+1)*L)
+            # for feature (f, t), everything outside [t*L, (t+1)*L) should be zero
+            for t in range(T1):
+                # everything outside [t*L, (t+1)*L) should be zero
+                X_matrix[:t*L, :, :, t] = 0
+                X_matrix[(t+1)*L:, :, :, t] = 0
+
+            X_matrix = einops.rearrange(X_matrix, 'T ND F R -> (T ND) (F R)')
+            # F groups, each of size T1
+            groups = einops.repeat(np.arange(F), 'F -> (F T1)', T1=T1)
+            assert_equal(len(groups), X_matrix.shape[1])
+            feature_names = [(f, t, *rest) for (f, *rest) in feature_names for t in range(T1)]
+
         feature_cost = np.array([ self.penalty*int(basis_function.return_type == "matrix") + 1
                                 for (basis_function, *rest) in feature_names ])
 
@@ -429,8 +485,7 @@ class AccelerationLearner():
                  if abs(coefficients[feature_index]) > self.cutoff
         ]
 
-        for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
-            print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
+        self.print_model(model, split=arguments.split)
 
         # did we just shrink the basis?
         surviving_functions = {basis_function for w, (basis_function, *objects) in model }
@@ -439,10 +494,6 @@ class AccelerationLearner():
             print(f"Basis shrunk. Reestimating with smaller basis of {len(surviving_functions)} functions")
             new_basis = {b_key: [b for b in b_value if b in surviving_functions ]
                          for b_key, b_value in self.basis.items()}
-            if len(surviving_functions) < 15:
-                for fn in surviving_functions:
-                    print(fn.pretty_print())
-
             return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis, self.cutoff).fit(x, v, a)
         else:
             print(" ==  == acceleration learning has converged, reestimating coefficients ==  == ")
@@ -453,39 +504,51 @@ class AccelerationLearner():
                      for feature_index, feature_name in enumerate(feature_names)
                      if abs(coefficients[feature_index]) > 1e-3]
 
-            for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
-                print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
+            self.print_model(model, split=arguments.split)
 
             # now we convert to acceleration laws
             self.acceleration_laws = []
             for i in range(N):
-                this_law = []
-                for n_particles in [1,2]:
-                    for n_indices in [1,2]:
-                        for b in self.basis[(n_particles, n_indices)]:
+                for t in range(1 if not arguments.split else T1):
+                    this_law = []
+                    for n_particles in [1,2]:
+                        for n_indices in [1,2]:
+                            for b in self.basis[(n_particles, n_indices)]:
 
-                            if n_particles == 1: others = [i]
-                            else: others = [o for o in range(N) if o != i ]
+                                if n_particles == 1: others = [i]
+                                else: others = [o for o in range(N) if o != i ]
 
-                            for j in others:
-                                matches = [ (w, *more_objects)
-                                            for w, (basis_expression, object1, *more_objects) in model
-                                            if basis_expression == b and object1 == i and more_objects[0] == j]
-                                if len(matches) == 0: continue
+                                for j in others:
+                                    if arguments.split:
+                                        matches = [ (w, t1, *more_objects)
+                                                    for w, (basis_expression, t1, object1, *more_objects) in model
+                                                    if basis_expression == b and t1 == t and object1 == i and more_objects[0] == j]
+                                    else:
+                                        matches = [ (w, *more_objects)
+                                                    for w, (basis_expression, object1, *more_objects) in model
+                                                    if basis_expression == b and object1 == i and more_objects[0] == j]
 
-                                if n_indices == 1:
-                                    assert len(matches) == 1
-                                    this_law.append((b, i, j, matches[0][0]))
+                                    if len(matches) == 0: continue
 
-                                if n_indices == 2:
-                                    assert len(matches) <= 3
-                                    latent_vector = np.zeros(3)
-                                    for coefficient, _, idx in matches: latent_vector[idx] = coefficient
-                                    this_law.append((b, i, j, latent_vector))
+                                    if n_indices == 1:
+                                        assert len(matches) == 1
+                                        if arguments.split:
+                                            this_law.append((b, i, j, t, matches[0][0]))
+                                        else:
+                                            this_law.append((b, i, j, matches[0][0]))
 
-                self.acceleration_laws.append(this_law)
+                                    if n_indices == 2:
+                                        assert len(matches) <= 3
+                                        latent_vector = np.zeros(3)
+                                        for coefficient, _, idx in matches: latent_vector[idx] = coefficient
+                                        if arguments.split:
+                                            this_law.append((b, i, j, t, latent_vector))
+                                        else:
+                                            this_law.append((b, i, j, latent_vector))
 
-            self.show_laws()
+                    self.acceleration_laws.append(this_law)
+
+            self.show_laws(split=arguments.split)
 
             return self
 
@@ -524,7 +587,11 @@ def run_linear_learner(arguments, data_dict):
             exprs = []
             num_terms = 0
             for law in al.acceleration_laws:
-                for (expr, i, j, c) in law:
+                for term in law:
+                    if arguments.split:
+                        (expr, t, i, j, c) = term
+                    else:
+                        (expr, i, j, c) = term
                     exprs.append(expr)
                     num_terms += sum(c != 0) if type(c) == np.ndarray else 1
 
@@ -577,8 +644,11 @@ if __name__ == '__main__':
     parser.add_argument("--animate_learned", '-al', action='store_true', help='animate the learned acceleration laws')
     parser.add_argument("--group", '-g', action='store_true', help='run group lasso so that learned terms are same for different particle pairs')
     parser.add_argument("--mirror", '-mi', action='store_true', help='learn identical laws for each particle')
+    parser.add_argument("--split", '-sp', action='store_true', help='split the data into chunks of length split_length')
+    parser.add_argument("--split_length", '-sl', default=1, type=int, help='length to split sequence into, if --split is enabled')
 
     arguments = parser.parse_args()
+    assert not (arguments.split and arguments.group), 'split and group are incompatible'
     print(f'{arguments=}')
 
     experiments = [
@@ -592,6 +662,7 @@ if __name__ == '__main__':
         ("magnet2", simulate_charge_dipole),
         ("boids", lambda: load_boids(14)),
         ("spring", simulate_elastic_pendulum),
+        ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=500, speedup=10)),
     ]
 
     if arguments.simulation != 'all':

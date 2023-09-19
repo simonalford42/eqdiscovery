@@ -10,10 +10,10 @@ PixelBoids - Pixel-based Boids simulation, drawn to a surfArray.
 Uses numpy array math instead of math lib. github.com/Nikorasu/PyNBoids
 Copyright (c) 2021  Nikolaus Stromberg  nikorasu85@gmail.com
 '''
-FLLSCRN = True          # True for Fullscreen, or False for Window
-BOIDZ = 3             # Number of Boids
-WIDTH = 700            # Window Width (1200)
-HEIGHT = 400            # Window Height (800)
+FLLSCRN = False          # True for Fullscreen, or False for Window
+BOIDZ = 10             # Number of Boids
+WIDTH = 500            # Window Width (1200)
+HEIGHT = 500            # Window Height (800)
 PRATIO = 5              # Pixel Ratio for surfArray
 SPEED = 4               # Movement speed
 FADE = 30               # surfArray fade rate, controls tail length
@@ -33,8 +33,9 @@ class BoidPix():
 
         # initialize in a centered rectangle of dims initH, initW
         initH, initW = 50, 50
-        assert 2 * initH < self.maxH
-        assert 2 * initW < self.maxW
+        # print(self.maxH, self.maxW, initH, initW)
+        # assert 2 * initH < self.maxH
+        # assert 2 * initW < self.maxW
         bufferH, bufferW = (self.maxH - initH) // 2, (self.maxW - initW) // 2
         assert bufferW < self.maxW - bufferW
         assert bufferH < self.maxH - bufferH
@@ -60,7 +61,6 @@ class BoidPix():
             targetV = (np.mean(neiboids[:,0]), np.mean(neiboids[:,1]))
             # if too close, move away from closest neighbor
             if neiboids[0,3] < 4 :
-                print('repulsed')
                 targetV = (neiboids[0,0], neiboids[0,1])
             # get angle differences for steering
             tDiff = pg.Vector2(targetV) - self.pos
@@ -91,10 +91,10 @@ class BoidPix():
 
         # Edge Wrap
 
-        # if self.pos[1] < 1 : self.pos[1] = self.maxH - 1
-        # elif self.pos[1] > self.maxH : self.pos[1] = 1
-        # if self.pos[0] < 1 : self.pos[0] = self.maxW - 1
-        # elif self.pos[0] > self.maxW : self.pos[0] = 1
+        if self.pos[1] < 1 : self.pos[1] = self.maxH - 1
+        elif self.pos[1] > self.maxH : self.pos[1] = 1
+        if self.pos[0] < 1 : self.pos[0] = self.maxW - 1
+        elif self.pos[0] > self.maxW : self.pos[0] = 1
 
         # Finally, output pos/ang to arrays
         self.data.b_array[self.bnum,:3] = [self.pos[0], self.pos[1], self.ang]
@@ -126,6 +126,7 @@ def main():
 
     cur_w, cur_h = screen.get_size()
     screenSize = (cur_w, cur_h)
+    print(f'{screenSize=}')
 
     drawLayer = surfaceArray(screenSize)
     boidList = []
@@ -160,7 +161,7 @@ def main():
             v.append(v_t)
 
         # print(len(x))
-        if len(x) == 150:
+        if len(x) == 15000:
             x = np.array(x)
             v = np.array(v)
             a = np.array(a)

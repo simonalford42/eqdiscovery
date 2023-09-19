@@ -18,7 +18,7 @@ def simulate_step(pos, vel, too_close_radius=3, visible_radius=4, max_vel=1, sep
         a1 = separation_coeff * (pos[i] - pos[too_close_neighbors]).sum(axis=0)
 
         # more towards COM of visible neighbors
-        a2 = flocking_coeff * (pos[visible_neighbors] - pos[i]).mean(axis=0) / 100
+        a2 = flocking_coeff * (pos[visible_neighbors] - pos[i]).mean(axis=0) / 8
 
         # make velocity similar to neighbor velocity
         a3 = alignment_coeff * (vel[visible_neighbors] - vel[i]).mean(axis=0) / 8
@@ -27,7 +27,7 @@ def simulate_step(pos, vel, too_close_radius=3, visible_radius=4, max_vel=1, sep
         new_v = vel[i] + new_a
 
         if np.linalg.norm(new_v) > max_vel:
-            new_v = new_v / np.linalg.norm(new_v)
+            new_v = max_vel * new_v / np.linalg.norm(new_v)
 
         new_x = pos[i] + new_v
 
@@ -54,14 +54,14 @@ def simulate_boids(n, T=100):
     flocking_coeff = .1
     alignment_coeff = 2
 
-    pos = np.random.uniform(-10*n, 10*n, (n, 2))
+    pos = np.random.uniform(25, 75, (n, 2))
     vel = np.random.uniform(-1, 1, (n, 2))
 
     # (3, T, BOIDZ, 2)
     x, v, a = [pos], [vel], []
 
     for _ in range(T):
-        new_x, new_v, new_a = simulate_step(x[-1], v[-1], too_close_radius, visible_radius, max_vel, separation_coeff, flocking_coeff, alignment_coeff)
+        new_x, new_v, new_a = simulate_step(x[-1], v[-1], too_close_radius, visible_radius, max_vel, separation_coeff, flocking_coeff, alignment_coeff, xmin=0, xmax=100, ymin=0, ymax=100)
 
         x.append(new_x)
         v.append(new_v)
@@ -77,20 +77,20 @@ def pygame_simulate_boids(n, T=100):
     pygame.init()
 
     # Screen dimensions
-    width, height = 800, 600
+    width, height = 500, 500
     screen = pygame.display.set_mode((width, height))
     pygame.display.set_caption("Boids Simulation")
 
-    too_close_radius = 3
-    visible_radius = 4
-    max_vel = 1
+    too_close_radius = 8
+    visible_radius = 15
+    max_vel = 0.1
 
     separation_coeff = 1
     flocking_coeff = 1
     alignment_coeff = 1
 
-    pos = np.random.uniform(0, min(width, height), (n, 2))
-    vel = np.random.uniform(-1, 1, (n, 2))
+    pos = np.random.uniform(min(width, height)//4, 3 * min(width, height) // 4, (n, 2))
+    vel = np.random.uniform(-0.1, 0.1, (n, 2))
 
     # (3, T, BOIDZ, 2)
     x, v, a = [pos], [vel], []
@@ -176,7 +176,7 @@ def load_boids(i=4):
 
 if __name__ == '__main__':
     T = 10000
-    n = 100
+    n = 10
     frame_rate = 10
     pygame_simulate_boids(n=n, T=T)
     # x, v, a = simulate_boids(n=n, T=T)
