@@ -177,9 +177,11 @@ class AccelerationLearner():
             Scale,
             Inner,
             Times,
+
+            Perp,
         ]
 
-        # if 'R' in vectors: ops.extend([RInRadius4, RInRadius48,])
+        if 'R' in vectors: ops.extend([RInRadius4, RInRadius48,])
 
         if self.dimension == 3: ops.extend([
             Skew,
@@ -540,10 +542,11 @@ class AccelerationLearner():
                                     if n_indices == 2:
                                         assert len(matches) <= 3
                                         latent_vector = np.zeros(3)
-                                        for coefficient, _, idx in matches: latent_vector[idx] = coefficient
                                         if arguments.split:
+                                            for coefficient, t, _, idx in matches: latent_vector[idx] = coefficient
                                             this_law.append((b, i, j, t, latent_vector))
                                         else:
+                                            for coefficient, _, idx in matches: latent_vector[idx] = coefficient
                                             this_law.append((b, i, j, latent_vector))
 
                     self.acceleration_laws.append(this_law)
@@ -663,6 +666,7 @@ if __name__ == '__main__':
         ("boids", lambda: load_boids(14)),
         ("spring", simulate_elastic_pendulum),
         ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=500, speedup=10)),
+        ("circle", simulate_circle),
     ]
 
     if arguments.simulation != 'all':
@@ -690,3 +694,4 @@ if __name__ == '__main__':
             # import sys; sys.exit(0)
 
     run_linear_learner(arguments, data_dict)
+

@@ -212,6 +212,18 @@ class Length(Expression):
     def arguments(self): return [self.x]
 
 
+class Perp(Expression):
+    return_type = "vector"
+    argument_types = ["vector"]
+    op_str = "perp"
+    op = lambda x: np.array([-x[1], x[0]])
+
+    def __init__(self, x):
+        self.x = x
+
+    def arguments(self): return [self.x]
+
+
 class Scale(Expression):
     return_type = "vector"
     argument_types = ["real","vector"]

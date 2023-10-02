@@ -12,6 +12,37 @@ A_VALUES = None
 M_VALUES = None
 
 
+def simulate_circle():
+
+    init_x = np.array([1, 0])
+    init_v = np.array([0, 1])
+    x = [init_x]
+    v = [init_v]
+    a = []
+
+    T = 10
+    dt = 0.01
+
+    for _ in range(int(T/dt)+1):
+        a_t = np.array([-v[-1][1], v[-1][0]])
+        dx = v[-1]*dt
+        dv = a_t*dt
+
+        a.append(a_t)
+        x.append(x[-1]+dx)
+        v.append(v[-1]+dv)
+
+    x = np.stack(x)
+    v = np.stack(v)
+    a = np.stack(a)
+    # add axis for n=1 particle
+    x = x[:, None, :][:T]
+    v = v[:, None, :][:T]
+    a = a[:, None, :][:T]
+
+    return np.stack(x), np.stack(v), _, np.stack(a)
+
+
 def simulate_learned_laws(init_x, init_v, laws, T=50, steps=100, dt=0.01):
     '''
     simulate a system of particles with given initial positions and velocities from the acceleration laws learned.
@@ -73,7 +104,7 @@ def simulate_learned_laws(init_x, init_v, laws, T=50, steps=100, dt=0.01):
     return np.stack(x)
 
 
-def animate_simon(x, name):
+def animate_simon(x, name, equal=False):
     from matplotlib import pyplot as plt
     import os
     T = len(x)
@@ -99,6 +130,10 @@ def animate_simon(x, name):
         plt.ylim([miny, maxy])
 
         plt.scatter(x[t, :, 0], x[t, :, 1])
+        if equal:
+            # force equal aspect ratio
+            plt.gca().set_aspect('equal')
+
         plt.savefig(f"/tmp/{name}_{t:03d}.png")
         plt.close()
     print('done, now converting images to gif... ')
@@ -278,7 +313,6 @@ def simulate_falling():
 
 
 if __name__ == '__main__':
-    x,v,f,a = simulate_drag3()
-    print(a[:,0,1])
-    animate(x)
+    x,v,a = simulate_circle()
+    animate_simon(x, 'circle', equal=True)
 

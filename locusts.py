@@ -84,6 +84,8 @@ def visualize_data(data, speedup=1):
 
 def load_locusts(filename, T=500, speedup=10):
     data = import_data(filename)
+    # two timesteps get chopped off when calculating acceleration and velocity 😳
+    T = T + 2
     return convert_to_xvfa_data(data[0:T*speedup:speedup])
 
 def convert_to_xvfa_data(data):
@@ -91,11 +93,12 @@ def convert_to_xvfa_data(data):
     # we want to convert it to a numpy array of shape (3, T, N, 2)
     # where the first dimension is x, v, a
     # and x is the position, v is the velocity, and a is the acceleration
+
+    # convert data dtype from object to float
+    data = data.astype(float)
     x = data
     v = data[1:] - data[:-1]
     a = v[1:] - v[:-1]
-    print(data.dtype)
-    assert False
     return x[:len(a)], v[:len(a)], None, a
 
 
@@ -123,15 +126,17 @@ if __name__ == '__main__':
     # first num is number of locusts, ue means unequal food sources, eq equal
     # data = import_data('30UE20191206_tracked.csv')
     # data = import_data('05EQ20200615_tracked.csv')
-    data = import_data('01EQ20191203_tracked.csv')
     # data = import_data('15EQ20191204_tracked.csv')
+#
 
+    data = import_data('01EQ20191203_tracked.csv')
+    data = data[1000:9000]
 
-    data = data[:10000]
-    vel_magnitudes = detect_segments(data)
-    for i in range(data.shape[1]):
-        plt.plot(vel_magnitudes[:,i])
-    plt.show()
+    # vel_magnitudes = detect_segments(data)
+    # for i in range(data.shape[1]):
+    #     plt.plot(vel_magnitudes[:,i])
+    # plt.show()
+    # visualize_data(data, speedup=10)
 
     # data = test_data()
-    visualize_data(data, speedup=10)
+    visualize_data(data, speedup=32)
