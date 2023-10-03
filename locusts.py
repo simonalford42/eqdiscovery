@@ -82,13 +82,14 @@ def visualize_data(data, speedup=1):
         pygame.display.set_caption(time_str)
 
 
-def load_locusts(filename, T=500, speedup=10):
+def load_locusts(filename, T=500, speedup=10, start=0):
     data = import_data(filename)
+    data = data[start:]
     # two timesteps get chopped off when calculating acceleration and velocity 😳
-    T = T + 2
-    return convert_to_xvfa_data(data[0:T*speedup:speedup])
+    data = data[::speedup]
+    return convert_to_xvfa_data(data, T)
 
-def convert_to_xvfa_data(data):
+def convert_to_xvfa_data(data, T):
     # data is a numpy array of shape (T, N, 2)
     # we want to convert it to a numpy array of shape (3, T, N, 2)
     # where the first dimension is x, v, a
@@ -99,7 +100,13 @@ def convert_to_xvfa_data(data):
     x = data
     v = data[1:] - data[:-1]
     a = v[1:] - v[:-1]
-    return x[:len(a)], v[:len(a)], None, a
+
+    x = x[:T]
+    v = v[:T]
+    a = a[:T]
+
+    assert len(x) == len(v) == len(a) == T, 'x, v, a should all have the same length but len(x) = {}, len(v) = {}, len(a) = {}'.format(len(x), len(v), len(a))
+    return x, v, None, a
 
 
 def detect_segments(data):
@@ -130,7 +137,9 @@ if __name__ == '__main__':
 #
 
     data = import_data('01EQ20191203_tracked.csv')
-    data = data[1000:9000]
+    # data = data[3000:7000]
+    # data = data[:10000]
+
 
     # vel_magnitudes = detect_segments(data)
     # for i in range(data.shape[1]):
@@ -139,4 +148,4 @@ if __name__ == '__main__':
     # visualize_data(data, speedup=10)
 
     # data = test_data()
-    visualize_data(data, speedup=32)
+    visualize_data(data, speedup=10)

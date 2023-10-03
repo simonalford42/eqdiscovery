@@ -649,6 +649,7 @@ if __name__ == '__main__':
     parser.add_argument("--mirror", '-mi', action='store_true', help='learn identical laws for each particle')
     parser.add_argument("--split", '-sp', action='store_true', help='split the data into chunks of length split_length')
     parser.add_argument("--split_length", '-sl', default=1, type=int, help='length to split sequence into, if --split is enabled')
+    parser.add_argument("--start", default=0, type=int, help='start ix for locust data')
 
     arguments = parser.parse_args()
     assert not (arguments.split and arguments.group), 'split and group are incompatible'
@@ -665,7 +666,8 @@ if __name__ == '__main__':
         ("magnet2", simulate_charge_dipole),
         ("boids", lambda: load_boids(14)),
         ("spring", simulate_elastic_pendulum),
-        ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=500, speedup=10)),
+        # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=1000, speedup=1, start=arguments.start)),
+        ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),
         ("circle", simulate_circle),
     ]
 
