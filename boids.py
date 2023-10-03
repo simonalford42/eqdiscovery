@@ -57,23 +57,6 @@ def simulate_step(pos, vel):
     def separation(i):
         return -sum(dist[i,j] for j in range(n) if j != i and dist[i, j] < FLEE_RADIUS)
 
-
-    def separation2(i):
-        total = 0
-
-        for j in range(n):
-            if j == i:
-                continue
-
-            if dist[i, j] < FLEE_RADIUS:
-                desired = scale_to_length(dist[i, j], MAX_SPEED)
-            else:
-                desired = scale_to_length(vel[i], MAX_SPEED)
-
-            total += desired - vel[i]
-
-        return total
-
     def alignment(i):
         desired = sum(vel[j] for j in range(n) if j != i and dist[i, j] < ALIGN_RADIUS)
 
@@ -90,12 +73,29 @@ def simulate_step(pos, vel):
 
 
     for i in range(n):
-        a0 = separation(i)
-        a1 = alignment(i)
-        a2 = cohesion(i)
+        a = 0
 
-        new_a = a0 + a1 + a2
-        new_v = vel[i] + new_a * DT
+        for j in range(n):
+            if j == i: continue
+
+            # separation
+            if dist[i, j] < FLEE_RADIUS:
+                a -= dist[i,j]
+
+            # alignment
+            if dist[i, j] < ALIGN_RADIUS:
+                a += (1/n) * (vel[j] - vel[i])
+
+            # cohesion
+            if dist[i, j] < COHESION_RADIUS:
+                a += (1/100) * (1/(n-1)) * (pos[j] - pos[i])
+
+        # a0 = separation(i)
+        # a1 = alignment(i)
+        # a2 = cohesion(i)
+
+        # new_a = a0 + a1 + a2
+        new_v = vel[i] + a * DT
 
         if CLIP_VEL:
             new_v = clip(new_v, MAX_SPEED)
