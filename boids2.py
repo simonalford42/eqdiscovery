@@ -2,70 +2,126 @@ import numpy as np
 import utils
 from scipy.spatial.distance import cdist
 import pygame
+import random
 
 FPS = 30
-WIDTH = 800
-HEIGHT = 500
-
+WIDTH = 900
+HEIGHT = 600
 MAX_SPEED = 8
-FLEE_RADIUS = 15
-ALIGN_RADIUS = 100
-COHESION_RADIUS = 100
+FLEE_RADIUS = 43
+MAX_FLEE_FORCE = 22
+ALIGN_RADIUS = 120
+COHESION_RADIUS = 400
 DT = 1/FPS
-WRAP = True
-CLIP_VEL = False
-
-
-def wrap(pos):
-    if pos[0] > WIDTH:
-        pos[0] = 0
-    elif pos[0] < 0:
-        pos[0] = WIDTH
-
-    if pos[1] > HEIGHT:
-        pos[1] = 0
-    elif pos[1] < 0:
-        pos[1] = HEIGHT
-
-    return pos
-
 
 def simulate_step(pos, vel):
     n = len(pos)
     x_t, v_t, a_t = [], [], []
-    dist = cdist(pos, pos)
+
+
+    def length(vec):
+        return np.linalg.norm(vec)
+
+    def normalize(vec):
+        return vec / length(vec)
+
+    def scale_to_length(vec, length):
+        return normalize(vec) * length
+
+    def separation(i, j):
+        '''
+        Function for Rule 1 - Separation
+        Steer to avoid crowding local flockmates
+        '''
+
+        steer = np.zeros(2)
+        dist = pos[i] - pos[j]
+        desired = np.zeros(2)
+
+        if dist[0] != 0 and dist[0] != 0 :
+            if length(dist) < FLEE_RADIUS:
+                desired = scale_to_length(dist, MAX_SPEED)
+            else:
+                desired = scale_to_length(vel[i], MAX_SPEED)
+        steer = desired - vel[i]
+        if length(steer) > MAX_FLEE_FORCE:
+            steer = scale_to_length(steer, MAX_FLEE_FORCE)
+
+        return steer
+
+    def alignment(i):
+        '''
+        Function for Rule 2 - Alignment
+        Steer towards the average heading of local flockmates
+        '''
+
+        align = np.zeros(2)
+        desired = np.zeros(2)
+        for j in range(n):
+            if j != i:
+                if vel[j][0] != 0 and vel[j][1] != 0:
+                    if length(pos[i] - pos[j]) < ALIGN_RADIUS:
+                        desired += normalize(vel[j]) * MAX_SPEED
+
+        align = desired - vel[i]
+        align =  align // n
+
+        if length(align) > MAX_SPEED:
+            align = scale_to_length(align, MAX_SPEED)
+
+        return align
+
+    def cohesion(i):
+        '''
+        Function for Rule 3 - Cohesion
+        Steer to move towards the average position (center of mass) of local flockmates
+        '''
+        cohes = np.zeros(2)
+        average_location = np.zeros(2)
+        for j in range(n):
+            if j != i:
+                dist = pos[i] - pos[j]
+                if length(dist) < COHESION_RADIUS:
+                    average_location += pos[j]
+
+        average_location = average_location/(n-1)
+        cohes = average_location - pos[i]
+        cohes = scale_to_length(cohes, MAX_SPEED)
+        return cohes
+
 
     for i in range(n):
         new_a = np.zeros(2)
 
         for j in range(n):
-            if j == i: continue
+            if j != i:
+                new_a += separation(i, j)
 
-            # separation
-            new_a += (1 if dist[i, j] < FLEE_RADIUS else 0) * (pos[j] - pos[i])
-
-            # alignment
-            new_a += (1 if dist[i, j] < ALIGN_RADIUS else 0) * (1/n) * (vel[j] - vel[i])
-
-            # cohesion
-            new_a += (1 if dist[i, j] < COHESION_RADIUS else 0) * (1/100) * (1/(n-1)) * (pos[j] - pos[i])
+        new_a += alignment(i)
+        new_a += cohesion(i)
 
         new_v = vel[i] + new_a * DT
 
-        if CLIP_VEL:
-            if np.linalg.norm(new_v) > MAX_SPEED:
-                new_v = new_v * (MAX_SPEED / np.linalg.norm(new_v))
+        if len(new_v) > MAX_SPEED:
+            new_v = scale_to_length(new_v, MAX_SPEED)
 
         new_x = pos[i] + new_v
 
-        if WRAP:
-            new_x = wrap(new_x)
+        if new_x[0] > WIDTH:
+            new_x[0] = 0
+        elif new_x[0] < 0:
+            new_x[0] = WIDTH
+
+        if new_x[1] > HEIGHT:
+            new_x[1] = 0
+        elif new_x[1] < 0:
+            new_x[1] = HEIGHT
 
         x_t.append(new_x)
         v_t.append(new_v)
         a_t.append(new_a)
 
-    return np.array(x_t[:len(a_t)]), np.array(v_t[:len(a_t)]), np.array(a_t)
+    return np.array(x_t), np.array(v_t), np.array(a_t)
 
 
 def pygame_simulate_boids(n):
