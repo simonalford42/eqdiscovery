@@ -8,7 +8,7 @@ WIDTH = 800
 HEIGHT = 500
 
 MAX_SPEED = 8
-FLEE_RADIUS = 15
+FLEE_RADIUS = 25
 ALIGN_RADIUS = 100
 COHESION_RADIUS = 100
 DT = 1/FPS
@@ -68,7 +68,7 @@ def simulate_step(pos, vel):
     return np.array(x_t[:len(a_t)]), np.array(v_t[:len(a_t)]), np.array(a_t)
 
 
-def pygame_simulate_boids(n):
+def pygame_simulate_boids(n, save=False, T=None):
     # Initialize pygame
     pygame.init()
 
@@ -104,7 +104,16 @@ def pygame_simulate_boids(n):
         fps = 30
         clock.tick(fps)
 
+        if len(x) == T and save:
+            running = False
+
     pygame.quit()
+
+    x, v, a = x[:len(a)], v[:len(a)], a[:len(a)]
+    x, v, a = np.array(x), np.array(v), np.array(a)
+
+    if save:
+        save_and_animate_boids(x, v, a)
 
 
 def animate(x, i=None, overwrite=False, frame_rate=1):
@@ -127,17 +136,27 @@ def animate(x, i=None, overwrite=False, frame_rate=1):
         plt.ylim([miny, maxy])
 
         plt.scatter(x[t, :, 0], x[t, :, 1], label="boids")
+        # make a circle of radius around each point in x[t, :, :]
+        for (x_, y_) in x[t, :, :]:
+            circle = plt.Circle((x_, y_), FLEE_RADIUS, color='r', fill=False)
+            plt.gca().add_artist(circle)
+            circle = plt.Circle((x_, y_), ALIGN_RADIUS, color='b', fill=False)
+            plt.gca().add_artist(circle)
+            circle = plt.Circle((x_, y_), COHESION_RADIUS, color='g', fill=False)
+            plt.gca().add_artist(circle)
+
+
         plt.savefig("/tmp/boids_%03d.png"%t)
         plt.close()
 
     if overwrite:
-        path = 'boids_data2/boids.gif'
+        path = 'boids_data3/boids.gif'
     elif i is None or i == -1:
-        path, i2 = utils.next_unused_path('boids_data2/boids.gif', return_i=True)
+        path, i2 = utils.next_unused_path('boids_data3/boids.gif', return_i=True)
         if i == -1 and i2 != i:
             raise ValueError(f'expected i={i}, got i={i2}')
     else:
-        path = f'boids_data2/boids_{i}.gif'
+        path = f'boids_data3/boids_{i}.gif'
     print('converting images to gif...')
     os.system(f"gm convert -delay 5 -loop 0 /tmp/boids_*.png {path}")
     print('animation saved to', path)
@@ -146,26 +165,32 @@ def animate(x, i=None, overwrite=False, frame_rate=1):
 def save_and_animate_boids(x, v, a, overwrite=False, frame_rate=1):
     arr = np.stack([x, v, a])
     if overwrite:
-        path = 'boids_data2/boids_data.npy'
+        path = 'boids_data3/boids_data.npy'
         i = 0
     else:
-        path, i = utils.next_unused_path('boids_data2/boids_data.npy', return_i=True)
+        path, i = utils.next_unused_path('boids_data3/boids_data.npy', return_i=True)
 
     np.save(path, arr)
     print(f'saved to {path}')
     animate(x, i, overwrite, frame_rate)
 
 
-def load_boids(i=4):
-    arr = np.load(f"boids_data2/boids_data_{i}.npy")
+def load_boids(i=None):
+    s = "boids_data3/boids_data" + ('' if i is None else f'_{i}') + '.npy'
+    arr = np.load(s)
+
+    n = arr.shape[2]
+    print('num boids: ', n)
+
     # T = arr.shape[1]
     # assert arr.shape == (3, T, BOIDZ, 2)
     x, v, a = arr
+    x, v, a = x[:5], v[:5], a[:5]
     return x, v, None, a
 
 
 if __name__ == '__main__':
-    n = 15
-    pygame_simulate_boids(n=n)
+    n = 10
+    pygame_simulate_boids(n=n, save=False, T=100)
     # x, v, a = simulate_boids(n=n, T=T)
     # save_and_animate_boids(x, v, a, overwrite=True, frame_rate=frame_rate)

@@ -8,6 +8,13 @@ import itertools
 import matplotlib.pyplot as plt
 
 
+WARANINGS = set()
+def warn(*message):
+    message = ' '.join([str(s) for s in message])
+    if message not in WARANINGS:
+        print(message)
+        WARANINGS.add(message)
+
 class Timing(object):
     def __init__(self, message):
         self.message = message

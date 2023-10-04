@@ -2,6 +2,7 @@ import itertools
 import random
 import numpy as np
 import math
+import utils
 
 class Expression():
 
@@ -87,41 +88,6 @@ class Plus(Expression):
         self.x, self.y = x, y
 
     def arguments(self): return [self.x, self.y]
-
-class VPlus(Expression):
-    return_type = "vector"
-    argument_types = ["vector","vector"]
-    op_str = "v+"
-    op = lambda x, y: x + y
-
-    def __init__(self, x, y):
-        self.x, self.y = x, y
-
-    def arguments(self): return [self.x, self.y]
-
-
-class Minus(Expression):
-    return_type = "real"
-    argument_types = ["real","real"]
-    op_str = "-"
-    op = lambda x, y: x - y
-
-    def __init__(self, x, y):
-        self.x, self.y = x, y
-
-    def arguments(self): return [self.x, self.y]
-
-class VMinus(Expression):
-    return_type = "vector"
-    argument_types = ["vector","vector"]
-    op_str = "v-"
-    op = lambda x, y: x - y
-
-    def __init__(self, x, y):
-        self.x, self.y = x, y
-
-    def arguments(self): return [self.x, self.y]
-
 
 class Times(Expression):
     return_type = "real"
@@ -496,26 +462,20 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
         """Returns True iff the semantics of this expression has never been seen before"""
         nonlocal inputs, observed_values
 
-        # print(expression.pretty_print(), '\t', expr_structure(expression))
         valuation = np.array([expression.evaluate(input) for input in inputs])
 
-        # discard all zeros
         if np.max(np.abs(valuation)) < 1e-5:
             return False # bad expression
 
-        # discard invalid
         if np.any(~np.isfinite(valuation)):
             return False
 
-        # homogeneity assumption:
         # we only care about the direction, not rescaling or sign changes
         valuation = valuation / np.linalg.norm(valuation)
 
-        # things we hash.tobytes(
         v1 = np.around(valuation*100, decimals=5).tobytes()
         v2 = np.around(-valuation*100, decimals=5).tobytes()
 
-        # is this something we have not seen before?
         if v1 not in observed_values and v2 not in observed_values:
             observed_values.add(v1)
 
@@ -533,6 +493,7 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
                 enumerated_expressions[key] = []
 
             enumerated_expressions[key].append( (expression, (v1, len(observed_values))))
+
             return True
 
         return False
@@ -550,7 +511,6 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
                 for arg_costs in integer_partitions(lvl - op_cost, len(operator.argument_types)):
                     candidate_arguments = [enumerated_expressions.get((typ, cost), [])
                                            for typ, cost in zip(operator.argument_types, arg_costs)]
-
                     for arguments in itertools.product(*candidate_arguments):
                         # note: could make use of precomputed evaluation of
                         # subtrees when evaluating later
@@ -657,7 +617,7 @@ def infer_variables(inputs):
     # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
 
 basis_cache = {}
-def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None, cost_bound=20, check_goals=False):
+def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None, cost_bound=20, check_goals=False, inputs=None):
     basis_key = (tuple(reals), tuple(vectors), size, dimension)
     if cost_dict is None and basis_key in basis_cache: return basis_cache[basis_key]
 
@@ -671,7 +631,10 @@ def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None
             d[nm] = np.random.random(dimension)*10-5
         return d
 
-    inputs = [random_input() for _ in range(10)]
+    if inputs == None:
+        inputs = []
+    # if other inputs provided, use random inputs too to ensemble the coverage..
+    inputs += [random_input() for _ in range(10)]
 
     vector_basis = []
     matrix_basis = []
@@ -695,13 +658,13 @@ def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None
                                                   inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
-            # print(expression)
+            print(expression.pretty_print())
             # if len(vector_basis) % 100 == 0:
                 # print(f'{len(vector_basis)} vector basis terms')
 
         if expression.return_type == "matrix" and len(matrix_basis) < size:
             matrix_basis.append(expression)
-            # print(expression)
+            print('matrix: ', expression.pretty_print())
             # if len(matrix_basis) % 100 == 0:
                 # print(f'{len(matrix_basis)} matrix basis terms')
 
@@ -710,6 +673,7 @@ def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None
             print(f'{len(vector_basis)} vector basis terms')
             assert False
 
+        if len(vector_basis) >= size and len(matrix_basis) == 0: break
         if len(vector_basis) >= size and len(matrix_basis) >= size: break
 
     basis_cache[basis_key] = (vector_basis, matrix_basis)
@@ -989,22 +953,3 @@ def test_pretty_print_to_expr():
         pp = expr.pretty_print()
         expr2 = pretty_print_to_expr(pp)
         assert pp == expr2.pretty_print(), f'{pp} != {expr2.pretty_print()}'
-
-if __name__ == '__main__':
-    np.random.seed(0)
-    random.seed(0)
-
-    ops = [
-        Divide,
-        Outer,
-        ScaleInverse,
-
-        Length,
-        Scale,
-        Inner,
-        Times,
-        Plus,
-        Minus,
-        Within100,
-        Within15,
-    ]

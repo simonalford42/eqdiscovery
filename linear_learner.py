@@ -123,13 +123,13 @@ def normalize_array(x):
 
 
 class AccelerationLearner():
-    def __init__(self, dimension, alpha, penalty, basis, cutoff, opset, cost_dict=None, library_ops=None):
+    def __init__(self, dimension, alpha, penalty, basis, cutoff, ops, x, v, cost_dict=None, library_ops=None):
         self.alpha = alpha
         self.dimension = dimension
         self.penalty = penalty
         self.cutoff = cutoff
         self.library_ops = library_ops
-        self.ops = opset
+        self.ops = ops
 
         if self.library_ops:
             print('Learned ops: ', [op.expr.pretty_print() for op in self.library_ops])
@@ -139,11 +139,15 @@ class AccelerationLearner():
             self.basis is a dictionary containing the expressions that serve as basis functions
             self.basis[(n_particles, n_indices)] is an list of expressions for `n_particles` interacting (probably 1 or 2) and n_indices is the number of indices in the return value of the basis function. For example, if the basis function returns a vector, n_indices=1. For a matrix, n_indices=2b
             """
+            inputs1 = self.random_inputs(x, v, n_particles=1)
+            inputs2 = self.random_inputs(x, v, n_particles=2)
+
             self.basis = {}
             # construct basis functions both for interaction forces and individual particle forces
             self.basis[(2,1)], self.basis[(2,2)] = construct_basis([], ["R", "V1", "V2"], basis,
                                                                    self.get_ops(["R", "V1", "V2"]),
-                                                                   dimension=dimension, cost_dict=cost_dict)
+                                                                   dimension=dimension, cost_dict=cost_dict,
+                                                                   inputs=inputs2)
 
             # remove any interaction forces which do not involve both particles
             self.basis[(2,1)] = [e
@@ -158,7 +162,8 @@ class AccelerationLearner():
 
             self.basis[(1,1)], self.basis[(1,2)]  = construct_basis([], ["V"], basis,
                                                                     self.get_ops(["V"]),
-                                                                    dimension=dimension, cost_dict=cost_dict)
+                                                                    dimension=dimension, cost_dict=cost_dict,
+                                                                    inputs=inputs1)
 
             # self.show_basis_function_counts()
         else:
@@ -170,8 +175,10 @@ class AccelerationLearner():
         ops = self.ops.copy()
 
         if self.dimension != 3:
-            ops.remove(Skew)
-            ops.remove(Cross)
+            if Skew in ops:
+                ops.remove(Skew)
+            if Cross in ops:
+                ops.remove(Cross)
 
         # include library ops if their vector is in the list of vectors
         def all_good_vectors(expr):
@@ -198,7 +205,16 @@ class AccelerationLearner():
                 # for b in self.basis[(i,j)]:
                     # print('\t' + b.pretty_print())
 
-    def print_model(self, model, split=False):
+    def print_model(self, model, split=False, mirror=False):
+        if mirror:
+            exprs = set()
+            model2 = []
+            for (w, (b, t, *o)) in model:
+                if b not in exprs:
+                    model2.append((w, (b, t, *o)))
+                    exprs.add(b)
+            model = model2
+
         if split:
             for w, (basis_expression, t, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
                 print(w, "\t", t, "\t", basis_expression.pretty_print(), "\t", *object_indices)
@@ -206,10 +222,22 @@ class AccelerationLearner():
             for w, (basis_expression, *object_indices) in sorted(model, key=lambda xx: -abs(xx[0])):
                 print(w, "\t", basis_expression.pretty_print(), "\t", *object_indices)
 
-    def show_laws(self, split=False):
-        print()
-        for i, terms in enumerate(self.acceleration_laws):
+    def show_laws(self, split=False, mirror=False):
+        laws = self.acceleration_laws
+        if mirror:
+            exprs = set()
+            laws2 = []
+            for terms in laws:
+                terms2 = []
+                for (b, *o) in terms:
+                    if b not in exprs:
+                        terms2.append((b, *o))
+                        exprs.add(b)
+                laws2.append(terms2)
+            laws = laws2
 
+        print()
+        for i, terms in enumerate(laws):
             pretty_terms = []
             for term in terms:
                 if split:
@@ -255,6 +283,27 @@ class AccelerationLearner():
         print('New basis size: ', self.basis_size)
 
 
+    def random_inputs(self, x, v, n_particles, n=10):
+        t_s = random.choices(range(x.shape[0]), k=n)
+        i_s = random.choices(range(x.shape[1]), k=n)
+        if n_particles == 1:
+            j_s = i_s
+        else:
+            j_s = random.choices(range(x.shape[1]), k=n)
+
+        inputs = []
+        for t, i, j in zip(t_s, i_s, j_s):
+            if i == j:
+                input_dictionary = {"V":v[t,i]}
+            else:
+                input_dictionary = {"R": x[t,j]-x[t,i],
+                                    "V1": v[t,i],
+                                    "V2": v[t,j]}
+            inputs.append(input_dictionary)
+
+        return inputs
+
+
     def evaluate_basis_functions(self, x, v):
         """
         returns: dictionary mapping (b, t, i, j) to its vector or matrix valuation, where:
@@ -263,7 +312,6 @@ class AccelerationLearner():
         j index is particle generating the force
         when i=j, this is not an interaction force
         """
-
         self.valuation_dictionary = {}
         T, N, D = x.shape
         assert D == self.dimension
@@ -472,7 +520,7 @@ class AccelerationLearner():
                  if abs(coefficients[feature_index]) > self.cutoff
         ]
 
-        self.print_model(model, split=arguments.split)
+        self.print_model(model, split=arguments.split, mirror=arguments.mirror)
 
         # did we just shrink the basis?
         surviving_functions = {basis_function for w, (basis_function, *objects) in model }
@@ -481,7 +529,7 @@ class AccelerationLearner():
             print(f"Basis shrunk. Reestimating with smaller basis of {len(surviving_functions)} functions")
             new_basis = {b_key: [b for b in b_value if b in surviving_functions ]
                          for b_key, b_value in self.basis.items()}
-            return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis, self.cutoff, self.ops).fit(x, v, a)
+            return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis, self.cutoff, self.ops, x, v).fit(x, v, a)
         else:
             print(" ==  == acceleration learning has converged, reestimating coefficients ==  == ")
 
@@ -491,7 +539,7 @@ class AccelerationLearner():
                      for feature_index, feature_name in enumerate(feature_names)
                      if abs(coefficients[feature_index]) > 1e-3]
 
-            self.print_model(model, split=arguments.split)
+            self.print_model(model, split=arguments.split, mirror=arguments.mirror)
 
             # now we convert to acceleration laws
             self.acceleration_laws = []
@@ -536,7 +584,7 @@ class AccelerationLearner():
 
                     self.acceleration_laws.append(this_law)
 
-            self.show_laws(split=arguments.split)
+            self.show_laws(split=arguments.split, mirror=arguments.mirror)
 
             return self
 
@@ -568,8 +616,9 @@ def run_linear_learner(arguments, data_dict):
                                      arguments.penalty,
                                      basis_size(iteration),
                                      arguments.cutoff,
-                                     opset=OPSET_DICT[arguments.opset],
-                                     library_ops=library_ops)
+                                     ops=arguments.ops,
+                                     library_ops=library_ops,
+                                     x=x, v=v)
 
             al = al.fit(x, v, a)
             print()
@@ -626,8 +675,8 @@ OPSET_DICT = {
     'boids': [
         Within15,
         Within100,
-        VPlus,
-        VMinus,
+        Length,
+        Scale,
     ],
 }
 
@@ -657,27 +706,36 @@ if __name__ == '__main__':
     parser.add_argument("--mirror", '-mi', action='store_true', help='learn identical laws for each particle')
     parser.add_argument("--split", '-sp', action='store_true', help='split the data into chunks of length split_length')
     parser.add_argument("--split_length", '-sl', default=1, type=int, help='length to split sequence into, if --split is enabled')
-    parser.add_argument("--opset", '-o', default='default', type=str, help='op set to use')
+    parser.add_argument("--opset", '-o', default=None, type=str, help='op set to use')
     parser.add_argument("--start", default=0, type=int, help='start ix for locust data')
 
     arguments = parser.parse_args()
     assert not (arguments.split and arguments.group), 'split and group are incompatible'
-    print(f'{arguments=}')
+
+    key = arguments.simulation
+    if arguments.opset:
+        key = arguments.opset
+    elif arguments.simulation in OPSET_DICT:
+        key = arguments.simulation
+    else:
+        key = 'default'
+
+    arguments.ops = OPSET_DICT[key]
 
     experiments = [
-        # ("drag3", simulate_drag3),
-        # ("falling", simulate_falling),
+        ("drag3", simulate_drag3),
+        ("falling", simulate_falling),
         ("orbit", simulate_circular_orbit),
         ("orbit2", simulate_2_orbits),
-        # ("drag1", simulate_drag1),
-        # ("drag2", simulate_drag2),
-        # ("magnet1", simulate_charge_in_uniform_magnetic_field),
+        ("drag1", simulate_drag1),
+        ("drag2", simulate_drag2),
+        ("magnet1", simulate_charge_in_uniform_magnetic_field),
         ("magnet2", simulate_charge_dipole),
-        # ("boids", lambda: load_boids(14)),
-        # ("spring", simulate_elastic_pendulum),
-        # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=1000, speedup=1, start=arguments.start)),
+        ("boids", lambda: load_boids(i=0)),
+        ("spring", simulate_elastic_pendulum),
+        ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=1000, speedup=1, start=arguments.start)),
         # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),
-        # ("circle", simulate_circle),
+        ("circle", simulate_circle),
     ]
 
     if arguments.simulation != 'all':
@@ -688,6 +746,7 @@ if __name__ == '__main__':
     else:
         experiments = [e for e in experiments if e[0] not in ['spring', 'boids']]
 
+    print(f'{arguments=}')
     data_dict = {}
     for name, callback in experiments:
         data_dict[name] = callback()
