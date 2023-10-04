@@ -212,6 +212,18 @@ class Length(Expression):
     def arguments(self): return [self.x]
 
 
+class Perp(Expression):
+    return_type = "vector"
+    argument_types = ["vector"]
+    op_str = "perp"
+    op = lambda x: np.array([-x[1], x[0]])
+
+    def __init__(self, x):
+        self.x = x
+
+    def arguments(self): return [self.x]
+
+
 class Scale(Expression):
     return_type = "vector"
     argument_types = ["real","vector"]
@@ -252,6 +264,36 @@ class Hat(Expression):
             return x/(((x*x).sum(-1)**0.5).unsqueeze(-1))
 
     def arguments(self): return [self.x]
+
+class RInRadius4(Expression):
+    return_type = "real"
+    argument_types = []
+    op_str = "rinradius4"
+
+    def __init__(self):
+        self.r = Vector('R')
+
+    def evaluate(self, environment):
+        r = self.r.evaluate(environment)
+        return 1 if np.sum(r * r)**0.5 < 4 else 1E-5
+        # return 1 / (1 + np.exp(10*(r-5)))
+
+    def arguments(self): return []
+
+class RInRadius48(Expression):
+    return_type = "real"
+    argument_types = []
+    op_str = "rinradius48"
+
+    def __init__(self):
+        self.r = Vector('R')
+
+    def evaluate(self, environment):
+        r = self.r.evaluate(environment)
+        return 1 if np.sum(r * r)**0.5 < 48 else 1E-5
+        # return 1 / (1 + np.exp(10*(r-5)))
+
+    def arguments(self): return []
 
 
 def abstraction(expr):
@@ -583,6 +625,8 @@ def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None
         # library learned constants aren't classes, but actual instances of exprs
         if isinstance(op, Expression):
             constants.append(op)
+        elif op.argument_types == []:
+            constants.append(op())
         else:
             operators.append(op)
 

@@ -5,8 +5,8 @@ import os
 import uuid
 from collections import namedtuple
 import itertools
-
 import matplotlib.pyplot as plt
+
 
 class Timing(object):
     def __init__(self, message):
@@ -34,6 +34,22 @@ def noisify(data, intensity=0.01):
     v2 = v + np.random.normal(scale=np.std(v) * intensity, size=v.shape)
     print(f"std x2: {np.std(x2):.2f}, std v2: {np.std(v2):.2f}")
     return x2, v2, f, a
+
+
+def next_unused_path(path, extend_fn=lambda i: f'_{i}', return_i=False):
+    last_dot = path.rindex('.')
+    extension = path[last_dot:]
+    file_name = path[:last_dot]
+
+    i = -1
+    while os.path.isfile(path):
+        i += 1
+        path = file_name + extend_fn(i) + extension
+
+    if return_i:
+        return path, i
+    else:
+        return path
 
 
 def assert_equal(a, b):
