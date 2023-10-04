@@ -8,31 +8,12 @@ WIDTH = 800
 HEIGHT = 500
 
 MAX_SPEED = 8
-FLEE_RADIUS = 5
-ALIGN_RADIUS = 120
-COHESION_RADIUS = 400
+FLEE_RADIUS = 15
+ALIGN_RADIUS = 100
+COHESION_RADIUS = 100
 DT = 1/FPS
 WRAP = True
-CLIP_VEL = True
-
-
-def length(vec):
-    return np.linalg.norm(vec)
-
-
-def normalize(vec):
-    return vec / length(vec)
-
-
-def scale_to_length(vec, length):
-    return normalize(vec) * length
-
-
-def clip(vec, max):
-    if length(vec) > max:
-        return scale_to_length(vec, max)
-    else:
-        return vec
+CLIP_VEL = False
 
 
 def wrap(pos):
@@ -54,51 +35,26 @@ def simulate_step(pos, vel):
     x_t, v_t, a_t = [], [], []
     dist = cdist(pos, pos)
 
-    def separation(i):
-        return -sum(dist[i,j] for j in range(n) if j != i and dist[i, j] < FLEE_RADIUS)
-
-    def alignment(i):
-        desired = sum(vel[j] for j in range(n) if j != i and dist[i, j] < ALIGN_RADIUS)
-
-        align = desired - vel[i]
-        align = align // n
-
-        return align
-
-    def cohesion(i):
-        average_location = (1/(n-1)) * sum(pos[j] for j in range(n) if j != i and dist[i, j] < COHESION_RADIUS)
-        # 1/100 coeff from website: https://vergenet.net/~conrad/boids/pseudocode.html
-        cohes = (1/100) * (average_location - pos[i])
-        return cohes
-
-
     for i in range(n):
-        a = 0
+        new_a = np.zeros(2)
 
         for j in range(n):
             if j == i: continue
 
             # separation
-            if dist[i, j] < FLEE_RADIUS:
-                a -= dist[i,j]
+            new_a += (1 if dist[i, j] < FLEE_RADIUS else 0) * (pos[j] - pos[i])
 
             # alignment
-            if dist[i, j] < ALIGN_RADIUS:
-                a += (1/n) * (vel[j] - vel[i])
+            new_a += (1 if dist[i, j] < ALIGN_RADIUS else 0) * (1/n) * (vel[j] - vel[i])
 
             # cohesion
-            if dist[i, j] < COHESION_RADIUS:
-                a += (1/100) * (1/(n-1)) * (pos[j] - pos[i])
+            new_a += (1 if dist[i, j] < COHESION_RADIUS else 0) * (1/100) * (1/(n-1)) * (pos[j] - pos[i])
 
-        # a0 = separation(i)
-        # a1 = alignment(i)
-        # a2 = cohesion(i)
-
-        # new_a = a0 + a1 + a2
-        new_v = vel[i] + a * DT
+        new_v = vel[i] + new_a * DT
 
         if CLIP_VEL:
-            new_v = clip(new_v, MAX_SPEED)
+            if np.linalg.norm(new_v) > MAX_SPEED:
+                new_v = new_v * (MAX_SPEED / np.linalg.norm(new_v))
 
         new_x = pos[i] + new_v
 
@@ -109,7 +65,7 @@ def simulate_step(pos, vel):
         v_t.append(new_v)
         a_t.append(new_a)
 
-    return np.array(x_t), np.array(v_t), np.array(a_t)
+    return np.array(x_t[:len(a_t)]), np.array(v_t[:len(a_t)]), np.array(a_t)
 
 
 def pygame_simulate_boids(n):
