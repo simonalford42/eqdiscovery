@@ -88,6 +88,41 @@ class Plus(Expression):
 
     def arguments(self): return [self.x, self.y]
 
+class VPlus(Expression):
+    return_type = "vector"
+    argument_types = ["vector","vector"]
+    op_str = "v+"
+    op = lambda x, y: x + y
+
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+    def arguments(self): return [self.x, self.y]
+
+
+class Minus(Expression):
+    return_type = "real"
+    argument_types = ["real","real"]
+    op_str = "-"
+    op = lambda x, y: x - y
+
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+    def arguments(self): return [self.x, self.y]
+
+class VMinus(Expression):
+    return_type = "vector"
+    argument_types = ["vector","vector"]
+    op_str = "v-"
+    op = lambda x, y: x - y
+
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+    def arguments(self): return [self.x, self.y]
+
+
 class Times(Expression):
     return_type = "real"
     argument_types = ["real","real"]
@@ -224,6 +259,31 @@ class Perp(Expression):
     def arguments(self): return [self.x]
 
 
+class Within100(Expression):
+    return_type = "real"
+    argument_types = ["real"]
+    op_str = "within100"
+    op = lambda x: 1 if x < 100 else 0
+
+    def __init__(self, x):
+        self.x = x
+
+    def arguments(self): return [self.x]
+
+
+class Within15(Expression):
+    return_type = "real"
+    argument_types = ["real"]
+    op_str = "within15"
+    op = lambda x: 1 if x < 15 else 0
+
+    def __init__(self, x):
+        self.x = x
+
+    def arguments(self): return [self.x]
+
+
+
 class Scale(Expression):
     return_type = "vector"
     argument_types = ["real","vector"]
@@ -234,6 +294,7 @@ class Scale(Expression):
         self.x, self.y = x, y
 
     def arguments(self): return [self.x, self.y]
+
 
 class ScaleInverse(Expression):
     return_type = "vector"
@@ -634,11 +695,13 @@ def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None
                                                   inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
+            # print(expression)
             # if len(vector_basis) % 100 == 0:
                 # print(f'{len(vector_basis)} vector basis terms')
 
         if expression.return_type == "matrix" and len(matrix_basis) < size:
             matrix_basis.append(expression)
+            # print(expression)
             # if len(matrix_basis) % 100 == 0:
                 # print(f'{len(matrix_basis)} matrix basis terms')
 
@@ -931,21 +994,17 @@ if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
 
-    cost_dict = None
-    # cost_dict = fit_pcfg(all_task_solution_expressions(), get_operators())
-    # cost_dict = fit_pcfg(all_task_solution_expressions_with_abstraction_const(), get_operators())
-    # dipole_cost_dict = dipole_cost_dict()
-    # for op, cost in cost_dict.items():
-        # print(f'{op.__name__}\t\t{cost_dict[op]}\t{dipole_cost_dict[op]}')
+    ops = [
+        Divide,
+        Outer,
+        ScaleInverse,
 
-    # operators = get_operators()
-    # vector_basis, matrix_basis = construct_basis([], ["R", "V1","V2"], size=200000, cost_dict=cost_dict, cost_bound=None, check_goals=True)
-
-    # res = library_learn(no_hat_expressions())
-    # import pdb
-    # pdb.set_trace()
-
-    test_pretty_print_to_expr()
-
-
-
+        Length,
+        Scale,
+        Inner,
+        Times,
+        Plus,
+        Minus,
+        Within100,
+        Within15,
+    ]

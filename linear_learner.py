@@ -123,12 +123,13 @@ def normalize_array(x):
 
 
 class AccelerationLearner():
-    def __init__(self, dimension, alpha, penalty, basis, cutoff, cost_dict=None, library_ops=None):
+    def __init__(self, dimension, alpha, penalty, basis, cutoff, opset, cost_dict=None, library_ops=None):
         self.alpha = alpha
         self.dimension = dimension
         self.penalty = penalty
         self.cutoff = cutoff
         self.library_ops = library_ops
+        self.ops = opset
 
         if self.library_ops:
             print('Learned ops: ', [op.expr.pretty_print() for op in self.library_ops])
@@ -166,27 +167,11 @@ class AccelerationLearner():
 
     def get_ops(self, vectors):
 
-        ops = [
-            Divide,
-            Outer,
-            ScaleInverse,
+        ops = self.ops.copy()
 
-            Hat,
-
-            Length,
-            Scale,
-            Inner,
-            Times,
-
-            Perp,
-        ]
-
-        if 'R' in vectors: ops.extend([RInRadius4, RInRadius48,])
-
-        if self.dimension == 3: ops.extend([
-            Skew,
-            Cross,
-        ])
+        if self.dimension != 3:
+            ops.remove(Skew)
+            ops.remove(Cross)
 
         # include library ops if their vector is in the list of vectors
         def all_good_vectors(expr):
@@ -496,7 +481,7 @@ class AccelerationLearner():
             print(f"Basis shrunk. Reestimating with smaller basis of {len(surviving_functions)} functions")
             new_basis = {b_key: [b for b in b_value if b in surviving_functions ]
                          for b_key, b_value in self.basis.items()}
-            return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis, self.cutoff).fit(x, v, a)
+            return AccelerationLearner(self.dimension, self.alpha, self.penalty, new_basis, self.cutoff, self.ops).fit(x, v, a)
         else:
             print(" ==  == acceleration learning has converged, reestimating coefficients ==  == ")
 
@@ -583,6 +568,7 @@ def run_linear_learner(arguments, data_dict):
                                      arguments.penalty,
                                      basis_size(iteration),
                                      arguments.cutoff,
+                                     opset=OPSET_DICT[arguments.opset],
                                      library_ops=library_ops)
 
             al = al.fit(x, v, a)
@@ -624,6 +610,28 @@ def run_linear_learner(arguments, data_dict):
 
 
 
+OPSET_DICT = {
+    'default': [
+        Divide,
+        Outer,
+        ScaleInverse,
+        Hat,
+        Length,
+        Scale,
+        Inner,
+        Times,
+        Cross,
+        Skew,
+    ],
+    'boids': [
+        Within15,
+        Within100,
+        VPlus,
+        VMinus,
+    ],
+}
+
+
 if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
@@ -649,6 +657,7 @@ if __name__ == '__main__':
     parser.add_argument("--mirror", '-mi', action='store_true', help='learn identical laws for each particle')
     parser.add_argument("--split", '-sp', action='store_true', help='split the data into chunks of length split_length')
     parser.add_argument("--split_length", '-sl', default=1, type=int, help='length to split sequence into, if --split is enabled')
+    parser.add_argument("--opset", '-o', default='default', type=str, help='op set to use')
     parser.add_argument("--start", default=0, type=int, help='start ix for locust data')
 
     arguments = parser.parse_args()
@@ -656,19 +665,19 @@ if __name__ == '__main__':
     print(f'{arguments=}')
 
     experiments = [
-        ("drag3", simulate_drag3),
-        ("falling", simulate_falling),
+        # ("drag3", simulate_drag3),
+        # ("falling", simulate_falling),
         ("orbit", simulate_circular_orbit),
         ("orbit2", simulate_2_orbits),
-        ("drag1", simulate_drag1),
-        ("drag2", simulate_drag2),
-        ("magnet1", simulate_charge_in_uniform_magnetic_field),
+        # ("drag1", simulate_drag1),
+        # ("drag2", simulate_drag2),
+        # ("magnet1", simulate_charge_in_uniform_magnetic_field),
         ("magnet2", simulate_charge_dipole),
-        ("boids", lambda: load_boids(14)),
-        ("spring", simulate_elastic_pendulum),
+        # ("boids", lambda: load_boids(14)),
+        # ("spring", simulate_elastic_pendulum),
         # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=1000, speedup=1, start=arguments.start)),
-        ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),
-        ("circle", simulate_circle),
+        # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),
+        # ("circle", simulate_circle),
     ]
 
     if arguments.simulation != 'all':
