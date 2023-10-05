@@ -46,13 +46,13 @@ def simulate_step(pos, vel):
             if j == i: continue
 
             # separation
-            new_a += 2 * (1 if dist[i, j] < FLEE_RADIUS else 0) * (pos[i] - pos[j])
+            new_a += (1 if dist[i, j] < FLEE_RADIUS else 0) * (pos[i] - pos[j])
 
             # alignment
-            # new_a += (1 if dist[i, j] < ALIGN_RADIUS else 0) * (1/n) * (vel[j] - vel[i])
+            new_a += (1 if dist[i, j] < ALIGN_RADIUS else 0) * (1) * (vel[j] - vel[i])
 
             # cohesion
-            # new_a += (1 if dist[i, j] < COHESION_RADIUS else 0) * (1/100) * (1/(n-1)) * (pos[j] - pos[i])
+            new_a += (1 if dist[i, j] < COHESION_RADIUS else 0) * (1/50) * (pos[j] - pos[i])
 
         new_v = vel[i] + new_a * DT
 
@@ -82,7 +82,7 @@ def pygame_simulate_boids(n, save=False, T=None):
     pygame.display.set_caption("Boids Simulation")
 
     # init particles in a box of width and height frac of the screen
-    f = 0.75
+    f = 0.5
     W, H = WIDTH, HEIGHT
     xpos = np.random.uniform(W/2 - W*f/2, W/2 + W*f/2, n)
     ypos = np.random.uniform(H/2 - H*f/2, H/2 + H*f/2, n)
@@ -109,6 +109,11 @@ def pygame_simulate_boids(n, save=False, T=None):
 
         for pos in new_x:
             pygame.draw.circle(screen, (255, 255, 255), pos, 2)
+            # draw a ring for each of the radii
+            circle = pygame.draw.circle(screen, (255, 0, 0), pos, FLEE_RADIUS, 1)
+            circle = pygame.draw.circle(screen, (0, 255, 0), pos, ALIGN_RADIUS, 1)
+            circle = pygame.draw.circle(screen, (0, 0, 255), pos, COHESION_RADIUS, 1)
+
 
         pygame.display.flip()
         fps = 30
@@ -197,8 +202,8 @@ if __name__ == '__main__':
         np.random.seed(int(sys.argv[1]))
     else:
         np.random.seed(0)
-    n = 10
-    T = 50
+    n = 5
+    T = 100
     pygame_simulate_boids(n=n, save=True, T=T)
     # x, v, a = simulate_boids(n=n, T=T)
     # save_and_animate_boids(x, v, a, overwrite=True, frame_rate=frame_rate)
