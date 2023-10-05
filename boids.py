@@ -1,14 +1,13 @@
 import numpy as np
 import utils
 from scipy.spatial.distance import cdist
-import pygame
 
 FPS = 30
-WIDTH = 800
-HEIGHT = 500
+WIDTH = 1000
+HEIGHT = 800
 
-MAX_SPEED = 8
-FLEE_RADIUS = 25
+MAX_SPEED = 2
+FLEE_RADIUS = 35
 ALIGN_RADIUS = 100
 COHESION_RADIUS = 100
 DT = 1/FPS
@@ -17,6 +16,10 @@ CLIP_VEL = False
 
 
 def wrap(pos):
+    # crash when we go out of bounds
+    if pos[0] > WIDTH or pos[0] < 0 or pos[1] > HEIGHT or pos[1] < 0:
+        raise ValueError(f'pos {pos} out of bounds')
+
     if pos[0] > WIDTH:
         pos[0] = 0
     elif pos[0] < 0:
@@ -32,7 +35,7 @@ def wrap(pos):
 
 def simulate_step(pos, vel):
     n = len(pos)
-    x_t, v_t, a_t = [], [], []
+    x, v, a = [], [], []
     dist = cdist(pos, pos)
 
     for i in range(n):
@@ -42,13 +45,13 @@ def simulate_step(pos, vel):
             if j == i: continue
 
             # separation
-            new_a += (1 if dist[i, j] < FLEE_RADIUS else 0) * (pos[j] - pos[i])
+            new_a += 2 * (1 if dist[i, j] < FLEE_RADIUS else 0) * (pos[i] - pos[j])
 
             # alignment
-            new_a += (1 if dist[i, j] < ALIGN_RADIUS else 0) * (1/n) * (vel[j] - vel[i])
+            # new_a += (1 if dist[i, j] < ALIGN_RADIUS else 0) * (1/n) * (vel[j] - vel[i])
 
             # cohesion
-            new_a += (1 if dist[i, j] < COHESION_RADIUS else 0) * (1/100) * (1/(n-1)) * (pos[j] - pos[i])
+            # new_a += (1 if dist[i, j] < COHESION_RADIUS else 0) * (1/100) * (1/(n-1)) * (pos[j] - pos[i])
 
         new_v = vel[i] + new_a * DT
 
@@ -61,14 +64,15 @@ def simulate_step(pos, vel):
         if WRAP:
             new_x = wrap(new_x)
 
-        x_t.append(new_x)
-        v_t.append(new_v)
-        a_t.append(new_a)
+        x.append(new_x)
+        v.append(new_v)
+        a.append(new_a)
 
-    return np.array(x_t[:len(a_t)]), np.array(v_t[:len(a_t)]), np.array(a_t)
+    return np.array([x, v, a])
 
 
 def pygame_simulate_boids(n, save=False, T=None):
+    import pygame
     # Initialize pygame
     pygame.init()
 
@@ -76,7 +80,12 @@ def pygame_simulate_boids(n, save=False, T=None):
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("Boids Simulation")
 
-    pos = np.random.uniform(min(WIDTH, HEIGHT)//4, 3 * min(WIDTH, HEIGHT) // 4, (n, 2))
+    # init particles in a box of width and height frac of the screen
+    f = 0.25
+    W, H = WIDTH, HEIGHT
+    xpos = np.random.uniform(W/2 - W*f/2, W/2 + W*f/2, n)
+    ypos = np.random.uniform(H/2 - H*f/2, H/2 + H*f/2, n)
+    pos = np.stack([xpos, ypos], axis=1)
     vel = np.random.uniform(-MAX_SPEED, MAX_SPEED, (n, 2))
 
     # (3, T, BOIDZ, 2)
@@ -104,15 +113,15 @@ def pygame_simulate_boids(n, save=False, T=None):
         fps = 30
         clock.tick(fps)
 
+        print(len(x))
         if len(x) == T and save:
             running = False
 
     pygame.quit()
 
-    x, v, a = x[:len(a)], v[:len(a)], a[:len(a)]
-    x, v, a = np.array(x), np.array(v), np.array(a)
-
-    if save:
+    if save and 'y' in input('Save? y/n'):
+        x, v, a = x[:len(a)], v[:len(a)], a[:len(a)]
+        x, v, a = np.array(x), np.array(v), np.array(a)
         save_and_animate_boids(x, v, a)
 
 
@@ -164,6 +173,7 @@ def animate(x, i=None, overwrite=False, frame_rate=1):
 
 def save_and_animate_boids(x, v, a, overwrite=False, frame_rate=1):
     arr = np.stack([x, v, a])
+    print('all zero: ', np.all(a == 0))
     if overwrite:
         path = 'boids_data3/boids_data.npy'
         i = 0
@@ -177,20 +187,17 @@ def save_and_animate_boids(x, v, a, overwrite=False, frame_rate=1):
 
 def load_boids(i=None):
     s = "boids_data3/boids_data" + ('' if i is None else f'_{i}') + '.npy'
-    arr = np.load(s)
-
-    n = arr.shape[2]
-    print('num boids: ', n)
-
-    # T = arr.shape[1]
-    # assert arr.shape == (3, T, BOIDZ, 2)
-    x, v, a = arr
+    # each x, v, a is (T, BOIDZ, 2)
+    x, v, a = np.load(s)
     x, v, a = x[:5], v[:5], a[:5]
+    print('all zero: ', np.all(a == 0))
     return x, v, None, a
 
 
 if __name__ == '__main__':
-    n = 10
-    pygame_simulate_boids(n=n, save=False, T=100)
+    n = 5
+    T = 75
+    pygame_simulate_boids(n=n, save=True, T=T)
+    load_boids(i=int(input('input i value')))
     # x, v, a = simulate_boids(n=n, T=T)
     # save_and_animate_boids(x, v, a, overwrite=True, frame_rate=frame_rate)

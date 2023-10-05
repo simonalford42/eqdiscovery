@@ -237,11 +237,11 @@ class Within100(Expression):
     def arguments(self): return [self.x]
 
 
-class Within15(Expression):
+class Within35(Expression):
     return_type = "real"
     argument_types = ["real"]
-    op_str = "within15"
-    op = lambda x: 1 if x < 15 else 0
+    op_str = "within35"
+    op = lambda x: 1 if x < 35 else 0
 
     def __init__(self, x):
         self.x = x
@@ -409,7 +409,6 @@ def pretty_print_to_expr(expr_str):
     return parse_expr(expr_str)
 
 
-GOAL_EXPRS = []
 def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_dict=None):
     """
     cost_bound: int. an upper bound on the cost of an expression
@@ -445,18 +444,6 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
     observed_values = set()
 
     dim = max([len(v) for v in inputs[0].values()])
-    check_goal = 'V1' in inputs[0] and dim == 3
-    if check_goal:
-        goal_exprs = dipole_solution_expressions()
-        # goal_exprs = list(set(all_task_solution_expressions()))
-        # for i, goal_expr in enumerate(goal_exprs):
-            # print(f'goal {i+1}: {goal_expr.pretty_print()}')
-
-        goal_vals = [np.array([goal_expr.evaluate(input) for input in inputs]) for goal_expr in goal_exprs]
-        goal_vals = [goal_val / np.linalg.norm(goal_val) for goal_val in goal_vals]
-        goal_v1s = [np.around(goal_val*100, decimals=5).tobytes() for goal_val in goal_vals]
-
-
     enumerated_expressions = {}
     def record_new_expression(expression, cost):
         """Returns True iff the semantics of this expression has never been seen before"""
@@ -478,13 +465,6 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
 
         if v1 not in observed_values and v2 not in observed_values:
             observed_values.add(v1)
-
-            if check_goal:
-                for i, goal_v1 in enumerate(goal_v1s):
-                    if v1 == goal_v1 or v2 == goal_v1:
-                        print(f'found term {i+1}: {expression.pretty_print()} {expression.return_type}')
-                        print(expr_structure(expression))
-                        GOAL_EXPRS.append(expression.pretty_print())
 
             # we have some new behavior
             key = (expression.__class__.return_type, cost)
@@ -610,14 +590,9 @@ def infer_variables(inputs):
     variables = sorted(variables, key=lambda v: v.name)
     return variables
 
-    # goal1_expr = Skew(ScaleInverse(V1, Inner(R, Scale(Length(R), R))))
-    # goal2_expr = ScaleInverse(Outer(Cross(V1, R), Hat(R)), Times(Inner(R, R), Inner(R, R)))
-
-    # goal1_expr = Skew(ScaleInverse(V1, NormCubed(R))
-    # goal2_expr = ScaleInverse(Outer(Cross(V1, R), R), NormFifth(R))
 
 basis_cache = {}
-def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None, cost_bound=20, check_goals=False, inputs=None):
+def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None, cost_bound=20, inputs=None):
     basis_key = (tuple(reals), tuple(vectors), size, dimension)
     if cost_dict is None and basis_key in basis_cache: return basis_cache[basis_key]
 
@@ -658,20 +633,13 @@ def construct_basis(reals, vectors, size, operators, dimension=3, cost_dict=None
                                                   inputs, cost_dict=cost_dict):
         if expression.return_type == "vector" and len(vector_basis) < size:
             vector_basis.append(expression)
-            print(expression.pretty_print())
             # if len(vector_basis) % 100 == 0:
                 # print(f'{len(vector_basis)} vector basis terms')
 
         if expression.return_type == "matrix" and len(matrix_basis) < size:
             matrix_basis.append(expression)
-            print('matrix: ', expression.pretty_print())
             # if len(matrix_basis) % 100 == 0:
                 # print(f'{len(matrix_basis)} matrix basis terms')
-
-        if check_goals and len(GOAL_EXPRS) == 2:
-            print(f'{len(matrix_basis)} matrix basis terms to find goals')
-            print(f'{len(vector_basis)} vector basis terms')
-            assert False
 
         if len(vector_basis) >= size and len(matrix_basis) == 0: break
         if len(vector_basis) >= size and len(matrix_basis) >= size: break

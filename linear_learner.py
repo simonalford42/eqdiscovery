@@ -673,7 +673,7 @@ OPSET_DICT = {
         Skew,
     ],
     'boids': [
-        Within15,
+        Within35,
         Within100,
         Length,
         Scale,
@@ -731,7 +731,7 @@ if __name__ == '__main__':
         ("drag2", simulate_drag2),
         ("magnet1", simulate_charge_in_uniform_magnetic_field),
         ("magnet2", simulate_charge_dipole),
-        ("boids", lambda: load_boids(i=0)),
+        ("boids", lambda: load_boids(i=1)),
         ("spring", simulate_elastic_pendulum),
         ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=1000, speedup=1, start=arguments.start)),
         # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),
