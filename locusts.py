@@ -4,7 +4,7 @@ import einops
 from utils import assert_shape
 from matplotlib import pyplot as plt
 
-def import_data(filename, path='Locusts/Data/Tracking/'):
+def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
     '''
 		1.1. _tracked.csv
 			1.1.1. Number of variables	: 5
@@ -21,6 +21,22 @@ def import_data(filename, path='Locusts/Data/Tracking/'):
     data = pd.read_csv(path + filename, sep=',', header=0, index_col=0).to_numpy()
     data = einops.rearrange(data, '(a b) c -> a b c', a=45000)
     data = data[:, :, 1:3]
+    data = data.astype(float)
+
+    if smoothing:
+        # apply gaussian smoothing to the data to remove noise
+        from scipy.ndimage import gaussian_filter1d
+
+        # apply filter to each termite separately
+        filtered_data = []
+        for i in range(data.shape[1]):
+            # filter x and y coordinate separately
+            filtered_x = gaussian_filter1d(data[:, i, 0], smoothing, axis=0)
+            filtered_y = gaussian_filter1d(data[:, i, 1], smoothing, axis=0)
+            filtered_data.append(np.stack([filtered_x, filtered_y], axis=1))
+
+        data = np.stack(filtered_data, axis=1)
+
     return data
 
 def test_data():
@@ -55,6 +71,19 @@ def visualize_data(data, speedup=1):
         x, y = p
         return int(W*(x-minx)/(maxx-minx)), int(H*(y-miny)/(maxy-miny))
 
+    # circle rendering
+    assert W == H
+    r = W//2
+    start_time = 10
+    # go one full circle over the course of the video
+    speed = 2 * np.pi / data.shape[0]
+
+    def circle_pos(t):
+        if t < start_time:
+            return 0, 0
+
+        return (W/2 + r*np.cos((t-start_time)*speed), H/2 - r*np.sin((t-start_time)*speed))
+
     import pygame
     pygame.init()
     screen = pygame.display.set_mode((W, H))
@@ -68,6 +97,10 @@ def visualize_data(data, speedup=1):
         screen.fill((0, 0, 0))
         for i in range(data.shape[1]):
             pygame.draw.circle(screen, (255, 255, 255), translate(data[t, i]), 2)
+
+        # draw the dot moving around in a circle too
+        # pygame.draw.circle(screen, (255, 255, 255), circle_pos(t), 2)
+
         pygame.display.flip()
         t += 1
         if t >= data.shape[0]:
@@ -82,14 +115,14 @@ def visualize_data(data, speedup=1):
         pygame.display.set_caption(time_str)
 
 
-def load_locusts(filename, T=500, speedup=10, start=0):
-    data = import_data(filename)
-    data = data[start:]
-    # two timesteps get chopped off when calculating acceleration and velocity 😳
-    data = data[::speedup]
-    return convert_to_xvfa_data(data, T)
+def load_locusts(filename, speedup=10, start=0, end=None, smoothing=0):
+    data = import_data(filename, smoothing=smoothing)
+    # add 2 since we lose two time steps when calculating acceleration
+    # so that the total number is still even
+    data = data[start:end+2:speedup]
+    return convert_to_xvfa_data(data)
 
-def convert_to_xvfa_data(data, T):
+def convert_to_xvfa_data(data):
     # data is a numpy array of shape (T, N, 2)
     # we want to convert it to a numpy array of shape (3, T, N, 2)
     # where the first dimension is x, v, a
@@ -101,6 +134,7 @@ def convert_to_xvfa_data(data, T):
     v = data[1:] - data[:-1]
     a = v[1:] - v[:-1]
 
+    T = len(a)
     x = x[:T]
     v = v[:T]
     a = a[:T]
@@ -132,12 +166,13 @@ def detect_segments(data):
 if __name__ == '__main__':
     # first num is number of locusts, ue means unequal food sources, eq equal
     # data = import_data('30UE20191206_tracked.csv')
-    # data = import_data('05EQ20200615_tracked.csv')
-    # data = import_data('15EQ20191204_tracked.csv')
+    # data = import_data('05EQ20200615_tracked.csv', smoothing=500)
+    # data = import_data('15EQ20191204_tracked.csv', smoothing=1000)
+    data = import_data('30EQ20191203_tracked.csv', smoothing=500)
 #
 
-    data = import_data('01EQ20191203_tracked.csv')
-    # data = data[3000:7000]
+    # data = import_data('01EQ20191203_tracked.csv', smoothing=1000)
+    # data = data[3000:6000]
     # data = data[:10000]
 
 
@@ -148,4 +183,4 @@ if __name__ == '__main__':
     # visualize_data(data, speedup=10)
 
     # data = test_data()
-    visualize_data(data, speedup=10)
+    visualize_data(data, speedup=60)

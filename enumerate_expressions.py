@@ -201,6 +201,45 @@ class Skew(Expression):
     def arguments(self): return [self.x]
 
 
+class Sin(Expression):
+    return_type = "real"
+    argument_types = ["real"]
+    op_str = "sin"
+    op = lambda x: np.sin(x)
+
+    def __init__(self, x):
+        self.x = x
+
+    def arguments(self): return [self.x]
+
+
+class Cos(Expression):
+    return_type = "real"
+    argument_types = ["real"]
+    op_str = "cos"
+    op = lambda x: np.cos(x)
+
+    def __init__(self, x):
+        self.x = x
+
+    def arguments(self): return [self.x]
+
+
+class SinCosVec(Expression):
+    return_type = "vector"
+    argument_types = ["vector"]
+    op_str = "scv"
+
+    def op(v):
+        assert v.shape[0] == 2
+        return np.array([np.sin(v[0]), np.cos(v[1])])
+
+    def __init__(self, x):
+        self.x = x
+
+    def arguments(self): return [self.x]
+
+
 class Length(Expression):
     return_type = "real"
     argument_types = ["vector"]

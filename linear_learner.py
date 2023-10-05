@@ -690,7 +690,7 @@ OPSET_DICT = {
     ],
 }
 OPSET_DICT['boids'] = OPSET_DICT['default'] + OPSET_DICT['boids']
-OPSET_DICT['locusts'] = OPSET_DICT['default'] + [Perp]
+OPSET_DICT['locusts'] = OPSET_DICT['default'] + [Perp, Sin, Cos, SinCosVec]
 
 
 if __name__ == '__main__':
@@ -745,7 +745,7 @@ if __name__ == '__main__':
         ("magnet2", simulate_charge_dipole),
         ("boids", lambda: load_boids(i=1)),
         ("spring", simulate_elastic_pendulum),
-        ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=1000, speedup=1, start=arguments.start)),
+        ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', speedup=1, start=3000, end=6000, smoothing=1000)),
         # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),
         ("circle", simulate_circle),
     ]
