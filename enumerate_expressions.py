@@ -449,7 +449,10 @@ def weighted_bottom_up_generator(cost_bound, operators, constants, inputs, cost_
         """Returns True iff the semantics of this expression has never been seen before"""
         nonlocal inputs, observed_values
 
-        valuation = np.array([expression.evaluate(input) for input in inputs])
+        try:
+            valuation = np.array([expression.evaluate(input) for input in inputs])
+        except ZeroDivisionError:
+            return False
 
         if np.max(np.abs(valuation)) < 1e-5:
             return False # bad expression

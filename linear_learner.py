@@ -139,27 +139,30 @@ class AccelerationLearner():
             self.basis is a dictionary containing the expressions that serve as basis functions
             self.basis[(n_particles, n_indices)] is an list of expressions for `n_particles` interacting (probably 1 or 2) and n_indices is the number of indices in the return value of the basis function. For example, if the basis function returns a vector, n_indices=1. For a matrix, n_indices=2b
             """
-            inputs1 = self.random_inputs(x, v, n_particles=1)
-            inputs2 = self.random_inputs(x, v, n_particles=2)
 
             self.basis = {}
-            # construct basis functions both for interaction forces and individual particle forces
-            self.basis[(2,1)], self.basis[(2,2)] = construct_basis([], ["R", "V1", "V2"], basis,
-                                                                   self.get_ops(["R", "V1", "V2"]),
-                                                                   dimension=dimension, cost_dict=cost_dict,
-                                                                   inputs=inputs2)
+            if x.shape[1] > 1:
+                inputs2 = self.random_inputs(x, v, n_particles=2)
+                # construct basis functions both for interaction forces and individual particle forces
+                self.basis[(2,1)], self.basis[(2,2)] = construct_basis([], ["R", "V1", "V2"], basis,
+                                                                       self.get_ops(["R", "V1", "V2"]),
+                                                                       dimension=dimension, cost_dict=cost_dict,
+                                                                       inputs=inputs2)
 
-            # remove any interaction forces which do not involve both particles
-            self.basis[(2,1)] = [e
-                                 for e in self.basis[(2,1)]
-                                 if "R" in e.pretty_print() or \
-                                 ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
+                # remove any interaction forces which do not involve both particles
+                self.basis[(2,1)] = [e
+                                     for e in self.basis[(2,1)]
+                                     if "R" in e.pretty_print() or \
+                                     ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
 
-            self.basis[(2,2)] = [e
-                                 for e in self.basis[(2,2)]
-                                 if "R" in e.pretty_print() or \
-                                 ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
+                self.basis[(2,2)] = [e
+                                     for e in self.basis[(2,2)]
+                                     if "R" in e.pretty_print() or \
+                                     ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
+            else:
+                self.basis[(2,1)], self.basis[(2,2)] = [], []
 
+            inputs1 = self.random_inputs(x, v, n_particles=1)
             self.basis[(1,1)], self.basis[(1,2)]  = construct_basis([], ["V"], basis,
                                                                     self.get_ops(["V"]),
                                                                     dimension=dimension, cost_dict=cost_dict,
@@ -285,12 +288,15 @@ class AccelerationLearner():
 
 
     def random_inputs(self, x, v, n_particles, n=10):
+        if x.shape[1] == 1 and n_particles == 2:
+            return None
+
         t_s = random.choices(range(x.shape[0]), k=n)
         i_s = random.choices(range(x.shape[1]), k=n)
         if n_particles == 1:
             j_s = i_s
         else:
-            j_s = random.choices(range(x.shape[1]), k=n)
+            j_s = [random.choice([v for v in range(x.shape[1]) if v != i_s[ix]]) for ix in range(len(i_s))]
 
         inputs = []
         for t, i, j in zip(t_s, i_s, j_s):
@@ -300,7 +306,9 @@ class AccelerationLearner():
                 input_dictionary = {"R": x[t,j]-x[t,i],
                                     "V1": v[t,i],
                                     "V2": v[t,j]}
-            inputs.append(input_dictionary)
+            # only use it if all values are nonzero
+            if all([v.any() for v in input_dictionary.values()]):
+                inputs.append(input_dictionary)
 
         return inputs
 
@@ -635,7 +643,7 @@ def run_linear_learner(arguments, data_dict):
                     num_terms += sum(c != 0) if type(c) == np.ndarray else 1
 
             n = x.shape[1]
-            if num_terms <= 3 * n * (n-1):
+            if num_terms <= 4 * n * (n-1):
                 print(f'Solved {name}')
                 is_experiment_solved[name] = True
             else:
@@ -681,6 +689,8 @@ OPSET_DICT = {
         Scale,
     ],
 }
+OPSET_DICT['boids'] = OPSET_DICT['default'] + OPSET_DICT['boids']
+OPSET_DICT['locusts'] = OPSET_DICT['default'] + [Perp]
 
 
 if __name__ == '__main__':
