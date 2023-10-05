@@ -123,6 +123,7 @@ def pygame_simulate_boids(n, save=False, T=None):
         x, v, a = x[:len(a)], v[:len(a)], a[:len(a)]
         x, v, a = np.array(x), np.array(v), np.array(a)
         save_and_animate_boids(x, v, a)
+        return True
 
 
 def animate(x, i=None, overwrite=False, frame_rate=1):
@@ -197,7 +198,8 @@ def load_boids(i=None):
 if __name__ == '__main__':
     n = 5
     T = 75
-    pygame_simulate_boids(n=n, save=True, T=T)
-    load_boids(i=int(input('input i value')))
+    if pygame_simulate_boids(n=n, save=True, T=T):
+        i=int(input('input i value'))
+        load_boids(i=i)
     # x, v, a = simulate_boids(n=n, T=T)
     # save_and_animate_boids(x, v, a, overwrite=True, frame_rate=frame_rate)

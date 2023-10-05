@@ -260,7 +260,8 @@ class AccelerationLearner():
                 pretty_terms.append(pretty)
 
             start = f"a_{i}" if not split else f"a_{i}_{t}"
-            print(start + f" = {' + '.join(pretty_terms)}")
+            if pretty_terms:
+                print(start + f" = {' + '.join(pretty_terms)}")
 
     def check_goal_exprs_present_in_basis(self):
         matches = 0
@@ -633,11 +634,12 @@ def run_linear_learner(arguments, data_dict):
                     exprs.append(expr)
                     num_terms += sum(c != 0) if type(c) == np.ndarray else 1
 
-            if num_terms < 10:
+            n = x.shape[1]
+            if num_terms < 5 * n:
                 print(f'Solved {name}')
                 is_experiment_solved[name] = True
             else:
-                print(f'Did not solve {name}')
+                print(f'Did not solve {name} (uses {num_terms} > {5*n} terms)')
 
             expressions += exprs
 
@@ -674,7 +676,7 @@ OPSET_DICT = {
     ],
     'boids': [
         Within35,
-        Within100,
+        # Within100,
         Length,
         Scale,
     ],
@@ -731,7 +733,7 @@ if __name__ == '__main__':
         ("drag2", simulate_drag2),
         ("magnet1", simulate_charge_in_uniform_magnetic_field),
         ("magnet2", simulate_charge_dipole),
-        ("boids", lambda: load_boids(i=1)),
+        ("boids", lambda: load_boids(i=3)),
         ("spring", simulate_elastic_pendulum),
         ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=1000, speedup=1, start=arguments.start)),
         # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),
