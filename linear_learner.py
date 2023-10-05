@@ -635,11 +635,11 @@ def run_linear_learner(arguments, data_dict):
                     num_terms += sum(c != 0) if type(c) == np.ndarray else 1
 
             n = x.shape[1]
-            if num_terms < 5 * n:
+            if num_terms < 3 * n * (n-1):
                 print(f'Solved {name}')
                 is_experiment_solved[name] = True
             else:
-                print(f'Did not solve {name} (uses {num_terms} > {5*n} terms)')
+                print(f'Did not solve {name} (uses {num_terms} > {4 * n * (n-1)} terms)')
 
             expressions += exprs
 
@@ -733,7 +733,7 @@ if __name__ == '__main__':
         ("drag2", simulate_drag2),
         ("magnet1", simulate_charge_in_uniform_magnetic_field),
         ("magnet2", simulate_charge_dipole),
-        ("boids", lambda: load_boids(i=3)),
+        ("boids", lambda: load_boids(i=0)),
         ("spring", simulate_elastic_pendulum),
         ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=1000, speedup=1, start=arguments.start)),
         # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),

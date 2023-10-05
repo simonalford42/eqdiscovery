@@ -1,17 +1,18 @@
 import numpy as np
 import utils
 from scipy.spatial.distance import cdist
+import sys
 
 FPS = 30
 WIDTH = 1000
 HEIGHT = 800
 
-MAX_SPEED = 2
+MAX_SPEED = 4
 FLEE_RADIUS = 35
 ALIGN_RADIUS = 100
 COHESION_RADIUS = 100
 DT = 1/FPS
-WRAP = True
+WRAP = False
 CLIP_VEL = False
 
 
@@ -81,7 +82,7 @@ def pygame_simulate_boids(n, save=False, T=None):
     pygame.display.set_caption("Boids Simulation")
 
     # init particles in a box of width and height frac of the screen
-    f = 0.25
+    f = 0.75
     W, H = WIDTH, HEIGHT
     xpos = np.random.uniform(W/2 - W*f/2, W/2 + W*f/2, n)
     ypos = np.random.uniform(H/2 - H*f/2, H/2 + H*f/2, n)
@@ -123,7 +124,6 @@ def pygame_simulate_boids(n, save=False, T=None):
         x, v, a = x[:len(a)], v[:len(a)], a[:len(a)]
         x, v, a = np.array(x), np.array(v), np.array(a)
         save_and_animate_boids(x, v, a)
-        return True
 
 
 def animate(x, i=None, overwrite=False, frame_rate=1):
@@ -174,7 +174,6 @@ def animate(x, i=None, overwrite=False, frame_rate=1):
 
 def save_and_animate_boids(x, v, a, overwrite=False, frame_rate=1):
     arr = np.stack([x, v, a])
-    print('all zero: ', np.all(a == 0))
     if overwrite:
         path = 'boids_data3/boids_data.npy'
         i = 0
@@ -190,16 +189,16 @@ def load_boids(i=None):
     s = "boids_data3/boids_data" + ('' if i is None else f'_{i}') + '.npy'
     # each x, v, a is (T, BOIDZ, 2)
     x, v, a = np.load(s)
-    x, v, a = x[:5], v[:5], a[:5]
-    print('all zero: ', np.all(a == 0))
     return x, v, None, a
 
 
 if __name__ == '__main__':
-    n = 5
-    T = 75
-    if pygame_simulate_boids(n=n, save=True, T=T):
-        i=int(input('input i value'))
-        load_boids(i=i)
+    if len(sys.argv) > 1:
+        np.random.seed(int(sys.argv[1]))
+    else:
+        np.random.seed(0)
+    n = 10
+    T = 50
+    pygame_simulate_boids(n=n, save=True, T=T)
     # x, v, a = simulate_boids(n=n, T=T)
     # save_and_animate_boids(x, v, a, overwrite=True, frame_rate=frame_rate)
