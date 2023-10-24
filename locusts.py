@@ -23,6 +23,10 @@ def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
     data = data[:, :, 1:3]
     data = data.astype(float)
 
+    return smooth_data(data, smoothing=smoothing)
+
+
+def smooth_data(data, smoothing=0):
     if smoothing:
         # apply gaussian smoothing to the data to remove noise
         from scipy.ndimage import gaussian_filter1d
@@ -38,6 +42,7 @@ def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
         data = np.stack(filtered_data, axis=1)
 
     return data
+
 
 def test_data():
     # three dots. first one moves from (0,0) to (1,1) over 100 frames
@@ -117,9 +122,9 @@ def visualize_data(data, speedup=1):
 
 def load_locusts(filename, speedup=10, start=0, end=None, smoothing=0):
     data = import_data(filename, smoothing=smoothing)
-    # add 2 since we lose two time steps when calculating acceleration
+    # we lose two time steps when calculating acceleration
     # so that the total number is still even
-    data = data[start:end+2:speedup]
+    data = data[start:end+2*speedup:speedup]
     return convert_to_xvfa_data(data)
 
 def convert_to_xvfa_data(data):
@@ -163,19 +168,57 @@ def detect_segments(data):
     return vel_magnitudes
 
 
+def simulate_random_walks(n=5, T=1000, std=0.00001, seed=1):
+    np.random.seed(seed)
+    def keep_in_bounds(x, v):
+        for p in range(n):
+            norm = (x[p, 0] ** 2 + x[p, 1]**2)**0.5
+            if norm > 1:
+                x[p] = x[p] / norm
+                v[p] = 0
+
+        return x, v
+
+    x = [np.zeros((n, 2))]
+    v = [np.zeros((n, 2))]
+    for t in range(T):
+        dv = np.random.normal(size=(n, 2), scale=std)
+        v.append(v[-1] + dv)
+        x.append(x[-1] + v[-1])
+        x[-1], v[-1] = keep_in_bounds(x[-1], v[-1])
+
+    return np.array(x)
+
+
 if __name__ == '__main__':
     # first num is number of locusts, ue means unequal food sources, eq equal
-    # data = import_data('30UE20191206_tracked.csv')
+    # data = import_data('30UE20191206_tracked.csv', smoothing=500)
+
     # data = import_data('05EQ20200615_tracked.csv', smoothing=500)
-    # data = import_data('15EQ20191204_tracked.csv', smoothing=1000)
-    data = import_data('30EQ20191203_tracked.csv', smoothing=500)
+    # data = import_data('05UE20200625_tracked.csv', smoothing=50)
+    import glob
+    # get 10 different n=10 datasets
+    # data_files = glob.glob('Locusts/Data/Tracking/05EQ*tracked.csv')[:10]
+    # get rid of the directories in front
+    # data_files = [f.split('/')[-1] for f in data_files]
+
+    # for data_file in data_files[3:]:
+    #     for smoothing in [500]:
+    #         data = import_data(data_file, smoothing=smoothing)
+    #         data = data[:5000]
+    #         visualize_data(data, speedup=30)
+    #         print('next')
+
+    # data = smooth_data(simulate_random_walks(n=5, T=10000, std=0.0001, seed=3), smoothing=100)
+    # data = import_data('05UE20200625_tracked.csv', smoothing=500)
+    # data = import_data('15EQ20191204_tracked.csv', smoothing=500)
+    data = import_data('30EQ20191203_tracked.csv', smoothing=100)
+    visualize_data(data, speedup=30)
 #
 
     # data = import_data('01EQ20191203_tracked.csv', smoothing=1000)
     # data = data[3000:6000]
-    # data = data[:10000]
-
-
+    # data = data[10000:14000]
     # vel_magnitudes = detect_segments(data)
     # for i in range(data.shape[1]):
     #     plt.plot(vel_magnitudes[:,i])
@@ -183,4 +226,3 @@ if __name__ == '__main__':
     # visualize_data(data, speedup=10)
 
     # data = test_data()
-    visualize_data(data, speedup=60)

@@ -10,6 +10,7 @@ from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet
 from sklearn import preprocessing
 import group_lasso
 from locusts import load_locusts
+import pickle
 
 
 # from nearest_neighbor import FastNN
@@ -649,13 +650,22 @@ def run_linear_learner(arguments, data_dict):
             else:
                 print(f'Did not solve {name} (uses {num_terms} > {4 * n * (n-1)} terms)')
 
+            if arguments.save:
+                f = arguments.save
+                if iteration > 0:
+                    f += f'_iter{iteration}'
+
+                f = utils.next_unused_path(f)
+                with open(f, 'wb') as f:
+                    pickle.dump(al.acceleration_laws, f)
+
             expressions += exprs
 
             if arguments.force:
                 fl = ForceLearner(0, arguments.lines)
                 fl.fit(al.acceleration_laws)
 
-            if arguments.animate_learned and iteration == iters-1:
+            if arguments.animate and iteration == iters-1:
                 # animate using the learned laws
                 x = simulate_learned_laws(x[0], v[0], al.acceleration_laws)
                 animate(x[::x.shape[0]//100], fn=name)
@@ -690,7 +700,7 @@ OPSET_DICT = {
     ],
 }
 OPSET_DICT['boids'] = OPSET_DICT['default'] + OPSET_DICT['boids']
-OPSET_DICT['locusts'] = OPSET_DICT['default'] + [Perp, Sin, Cos, SinCosVec]
+OPSET_DICT['locusts'] = OPSET_DICT['default'] + [Perp,]
 
 
 if __name__ == '__main__':
@@ -698,13 +708,12 @@ if __name__ == '__main__':
     random.seed(0)
 
     import argparse
-    parser = argparse.ArgumentParser(description = "")
+    parser = argparse.ArgumentParser(description="")
     parser.add_argument("--simulation", "-s", default='magnet2')
     parser.add_argument("--alpha", "-a", default=1e-3, type=float, help="controls sparsity")
     parser.add_argument("--embed", "-e", default=False, action="store_true", help="embed in 3d")
     parser.add_argument("--penalty", "-p", default=1.5, type=float,
                         help="penalty for introducing latent vectors")
-    parser.add_argument("--animate", "-m", default=False, action="store_true")
     parser.add_argument("--basis", "-b", default=200, type=int, help="number of basis functions")
     parser.add_argument("--basis2", "-b2", default=0, type=int, help="number of basis functions for second round. by default, will not do a second round")
     parser.add_argument("--latent", "-l", default=0, type=int, help="number of latent parameters to associate with each particle (in addition to its mass) ")
@@ -712,14 +721,16 @@ if __name__ == '__main__':
     parser.add_argument("--cutoff", "-c", default=1E-4, type=float, help="remove functions with coefficients below this value during sparse regression")
     parser.add_argument("--force", '-f', action="store_true", help="run force learning")
     parser.add_argument("--noise", '-n', action="store_true", help="add noise to the data")
-    parser.add_argument("--noise_intensity", '-ni', default=0.01 , type=float, help="std of noise to add to the data")
-    parser.add_argument("--animate_learned", '-al', action='store_true', help='animate the learned acceleration laws')
+    parser.add_argument("--noise_intensity", '-ni', default=0.01, type=float, help="std of noise to add to the data")
+    parser.add_argument("--animate", '-al', action='store_true', help='animate the loaded laws')
     parser.add_argument("--group", '-g', action='store_true', help='run group lasso so that learned terms are same for different particle pairs')
     parser.add_argument("--mirror", '-mi', action='store_true', help='learn identical laws for each particle')
     parser.add_argument("--split", '-sp', action='store_true', help='split the data into chunks of length split_length')
     parser.add_argument("--split_length", '-sl', default=1, type=int, help='length to split sequence into, if --split is enabled')
     parser.add_argument("--opset", '-o', default=None, type=str, help='op set to use')
     parser.add_argument("--start", default=0, type=int, help='start ix for locust data')
+    parser.add_argument("--save", default=None, type=str, help='path to save laws to')
+    parser.add_argument("--load", default=None, type=str, help='path to load laws (e.g. to simulate)')
 
     arguments = parser.parse_args()
     assert not (arguments.split and arguments.group), 'split and group are incompatible'
@@ -745,8 +756,8 @@ if __name__ == '__main__':
         ("magnet2", simulate_charge_dipole),
         ("boids", lambda: load_boids(i=1)),
         ("spring", simulate_elastic_pendulum),
-        ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', speedup=1, start=3000, end=6000, smoothing=1000)),
-        # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', T=4000, speedup=1, start=3000)),
+        # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', speedup=20, start=3000, end=6000, smoothing=500)),
+        ("locusts", lambda: load_locusts('05UE20200625_tracked.csv', speedup=20, start=10000, end=11000, smoothing=500)),
         ("circle", simulate_circle),
     ]
 
@@ -769,11 +780,15 @@ if __name__ == '__main__':
         print(f"simulated {name} data")
 
         if arguments.animate:
-            x, _, _, _ = data_dict[name]
-            # animate(x[::x.shape[0]//100], fn=name)
-            # animate_spring(x[::x.shape[0]//100])
-            # print(f"animated spring")
-            # import sys; sys.exit(0)
+            x, v, _, _ = data_dict[name]
+            if arguments.load:
+                # load pickle from arguments.load
+                with open(arguments.load, 'rb') as f:
+                    laws = pickle.load(f)
+                x = simulate_learned_laws(x[0], v[0], laws, T=100)
+
+            animate(x[::x.shape[0]//100], fn=name)
+            import sys; sys.exit(0)
 
     run_linear_learner(arguments, data_dict)
 
