@@ -7,6 +7,7 @@ from animate import animate
 from enumerate_expressions import *
 from boids import load_boids
 from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet
+from sklearn.metrics import mean_squared_error
 from sklearn import preprocessing
 import group_lasso
 from locusts import load_locusts
@@ -81,6 +82,7 @@ def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False,
     print(" ==  == finished sparse regression ==  == ")
     print("rank", LinearRegression(fit_intercept=False).fit(X, y).rank_, "/", min(X.shape))
     print("score", model.score(X, y))
+    print("mse", mean_squared_error(y, model.predict(X)))
     print()
 
     coefficients = y_scale * coefficients / scaler.scale_
@@ -746,6 +748,11 @@ def run_linear_learner(arguments, data_dict):
             print(f'Testing physics learner on {name}')
 
             x, v, _, a = data_dict[name]
+            # x shape is [T, N, D]
+            k = arguments.sample_every
+            # sample every k'th time step of x
+            x = x[::k, :, :]
+            print('sampling every kth time step, k=', k)
             dimension = 3 if arguments.embed else x.shape[-1]
 
             al = AccelerationLearner(dimension,
@@ -772,10 +779,10 @@ def run_linear_learner(arguments, data_dict):
 
             n = x.shape[1]
             if num_terms <= 4 * n * (n-1):
-                print(f'Solved {name}')
+                # print(f'Solved {name}')
                 is_experiment_solved[name] = True
-            else:
-                print(f'Did not solve {name} (uses {num_terms} > {4 * n * (n-1)} terms)')
+            # else:
+                # print(f'Did not solve {name} (uses {num_terms} > {4 * n * (n-1)} terms)')
 
             if arguments.save:
                 f = arguments.save
@@ -838,6 +845,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("--simulation", "-s", default='magnet2')
     parser.add_argument("--alpha", "-a", default=1e-3, type=float, help="controls sparsity")
+    parser.add_argument("--cutoff", "-c", default=1e-4, type=float, help="remove functions with coefficients below this value during sparse regression")
     parser.add_argument("--embed", "-e", default=False, action="store_true", help="embed in 3d")
     parser.add_argument("--penalty", "-p", default=1.5, type=float,
                         help="penalty for introducing latent vectors")
@@ -845,7 +853,6 @@ if __name__ == '__main__':
     parser.add_argument("--basis2", "-b2", default=0, type=int, help="number of basis functions for second round. by default, will not do a second round")
     parser.add_argument("--latent", "-l", default=0, type=int, help="number of latent parameters to associate with each particle (in addition to its mass) ")
     parser.add_argument("--lines", "-L", default=3, type=int, help="number of lines of code to synthesize per coefficient")
-    parser.add_argument("--cutoff", "-c", default=1E-4, type=float, help="remove functions with coefficients below this value during sparse regression")
     parser.add_argument("--force", '-f', action="store_true", help="run force learning")
     parser.add_argument("--noise", '-n', action="store_true", help="add noise to the data")
     parser.add_argument("--noise_intensity", '-ni', default=0.01, type=float, help="std of noise to add to the data")
@@ -855,6 +862,7 @@ if __name__ == '__main__':
     parser.add_argument("--split", '-sp', action='store_true', help='split the data into chunks of length split_length')
     parser.add_argument("--split_length", '-sl', default=1, type=int, help='length to split sequence into, if --split is enabled')
     parser.add_argument("--opset", '-o', default=None, type=str, help='op set to use')
+    parser.add_argument("--sample_every", '-k', default=1, type=int, help='sample every k values of the input data')
     parser.add_argument("--start", default=0, type=int, help='start ix for locust data')
     parser.add_argument("--save", default=None, type=str, help='path to save laws to')
     parser.add_argument("--load", default=None, type=str, help='path to load laws (e.g. to simulate)')
@@ -883,18 +891,19 @@ if __name__ == '__main__':
         ("magnet2", simulate_charge_dipole),
         ("boids", lambda: load_boids(i=1)),
         ("spring", simulate_elastic_pendulum),
-        # ("locusts", lambda: load_locusts('01EQ20191203', speedup=1, start=3000, end=6000, smoothing=1000)),
-        ("locusts", lambda: load_locusts('05UE20200625', speedup=20, start=10000, end=11000, smoothing=500)),
+        ("locusts1", lambda: load_locusts('01EQ20191203', speedup=10, start=4000, end=6000, smoothing=1000)),
+        ("locusts5", lambda: load_locusts('05UE20200625', speedup=20, start=10000, end=11000, smoothing=0)),
         ("circle", simulate_circle),
     ]
 
-    if arguments.simulation != 'all':
+    groups = {'physics': [ "drag3", "falling", "orbit", "orbit2", "drag1", "drag2", "magnet1", "magnet2" ] }
+
+    if arguments.simulation in groups:
+        experiments = [(name, callback) for name, callback in experiments
+                                        if name in groups[arguments.simulation]]
+    else:
         experiments = [(name, callback) for name, callback in experiments
                                         if name == arguments.simulation]
-        if len(experiments) == 0:
-            raise ValueError(f'Unknown simulation: {arguments.simulation}')
-    else:
-        experiments = [e for e in experiments if e[0] not in ['spring', 'boids']]
 
     print(f'{arguments=}')
     data_dict = {}

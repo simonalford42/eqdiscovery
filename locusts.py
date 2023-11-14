@@ -91,7 +91,7 @@ def test_data():
     data[:, 2, 1] = np.linspace(0, 1, 100)
     return data
 
-def visualize_data(data, speedup=1):
+def visualize_data(data, info=None, speedup=1):
     # watch the termites move around in pygame
     # data is a numpy array of shape (T, N, 2)
     W, H = 600, 600
@@ -105,12 +105,15 @@ def visualize_data(data, speedup=1):
     fps = fps / K
     data = data[::K]
 
-    minx, maxx = np.min(data[:, :, 0]), np.max(data[:, :, 0])
-    miny, maxy = np.min(data[:, :, 1]), np.max(data[:, :, 1])
+
+    maxv = np.max(data)
+    minv = np.min(data)
+    # minx, maxx = np.min(data[:, :, 0]), np.max(data[:, :, 0])
+    # miny, maxy = np.min(data[:, :, 1]), np.max(data[:, :, 1])
 
     def translate(p):
         x, y = p
-        return int(W*(x-minx)/(maxx-minx)), int(H*(y-miny)/(maxy-miny))
+        return int(W*(x-minv)/(maxv-minv)), int(H*(y-minv)/(maxv-minv))
 
     # circle rendering
     assert W == H
@@ -131,11 +134,29 @@ def visualize_data(data, speedup=1):
     clock = pygame.time.Clock()
     running = True
     t = 0
+
+    def get_color(is_HQ):
+        if is_HQ:
+            return (120, 0, 0)
+        else:
+            return (40, 0, 0)
+
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
         screen.fill((0, 0, 0))
+
+        # draw the food sources
+        if info:
+            assert W == H
+            rA = translate((info['radA'],0))[0] - translate((0, 0))[0]
+            rB = translate((info['radB'],0))[0] - translate((0, 0))[0]
+
+            pygame.draw.circle(screen, get_color(info['isA_HQ']), translate(info['posA']), radius=rA)
+            pygame.draw.circle(screen, get_color(info['isB_HQ']), translate(info['posB']), radius=rB)
+
+        # draw the dots moving around
         for i in range(data.shape[1]):
             pygame.draw.circle(screen, (255, 255, 255), translate(data[t, i]), 2)
 
@@ -258,16 +279,16 @@ if __name__ == '__main__':
     #         print('next')
 
     # data = smooth_data(simulate_random_walks(n=5, T=10000, std=0.0001, seed=3), smoothing=100)
-    # data, info = import_data('05UE20200625_tracked.csv', smoothing=500)
-    data, info = import_data('15EQ20191204_tracked.csv', smoothing=0)
-    # data, info = import_data('30EQ20191203_tracked.csv', smoothing=100)
+    # data, info = import_data('05UE20200625', smoothing=0)
+    data, info = import_data('15EQ20191204', smoothing=0)
+    # data, info = import_data('30UE20191206', smoothing=0)
 
-    # data, info = import_data('01EQ20191203_tracked.csv', smoothing=0)
+    # data, info = import_data('01EQ20191203', smoothing=0)
 
-    visualize_data(data, speedup=10)
+    visualize_data(data, info=info, speedup=30)
 #
 
-    # data, info = import_data('01EQ20191203_tracked.csv', smoothing=1000)
+    # data, info = import_data('01EQ20191203', smoothing=1000)
     # data = data[3000:6000]
     # data = data[10000:14000]
     # vel_magnitudes = detect_segments(data)
