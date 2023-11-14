@@ -314,6 +314,116 @@ class AccelerationLearner():
         return inputs
 
 
+    def evaluate_basis_functions_vectorized(self, x, v):
+        """
+        returns: dictionary mapping (b, t, i, j) to its vector or matrix valuation, where:
+        t index is time
+        i index is particle that force is acting on
+        j index is particle generating the force
+        when i=j, this is not an interaction force
+        """
+        self.valuation_dictionary = {}
+        T, N, D = x.shape
+        assert D == self.dimension
+
+        problematic_functions = set() # these are features that give nan/infs, or are otherwise invalid
+        # self.check_goal_exprs_present_in_basis()
+
+        if N == 1:
+            problematic_functions = {b
+                                     for (n_particles, n_indices), bs in self.basis.items()
+                                     if n_particles == 2
+                                     for b in bs}
+
+        # create the vectorized input dictionary
+        one_particle_dict = {"V": einops.rearrange(v, 'T N D -> (N T) D')}
+        two_particle_dict = {"R": einops.rearrange(x[:, None, :, :] - x[:, :, None, :], 'T N1 N2 D -> (N1 N2 T) D'),
+                             "V1": einops.repeat(x, 'T N D -> (N1 N T) D', N1=N),
+                             "V2": einops.repeat(x, 'T N D -> (N N2 T) D', N2=N)}
+
+        all_zero_functions = set()
+        too_small_functions = set()
+
+        for n_indices in [1, 2]:
+            for b in self.basis[(1, n_indices)]:
+                for (n_particles, input_dict) in zip([1, 2], [one_particle_dict, two_particle_dict]):
+                    for b in self.basis[(n_particles, n_indices)]:
+                        if b in problematic_functions: continue
+
+                        values = b.evaluate_vectorized(input_dict)
+
+                        if n_particles == 1:
+                            if n_indices == 1:
+                                values = einops.rearrange(values, '(N T) D -> T N D ', N=N)
+                            else:  # matrix result!
+                                values = einops.rearrange(values, '(N T) D1 D2 -> T N D1 D2', N=N)
+                        else:
+                            if n_indices == 1:
+                                values = einops.rearrange(values, '(N1 N2 T) D -> T N1 N2 D', N1=N, N2=N)
+                            else:
+                                values = einops.rearrange(values, '(N1 N2 T) D1 D2 -> T N1 N2 D1 D2', N1=N, N2=N)
+
+                        if np.any(np.isnan(values)):
+                            problematic_functions.add(b)
+                        else:
+                            max_val = np.abs(values).max()
+                            if max_val == 0:
+                                all_zero_functions.add(b)
+                            elif max_val <= 1E-6:
+                                too_small_functions.add(b)
+
+                            for t in range(T):
+                                for i in range(N):
+                                    for j in range(N):
+                                        if n_particles == 1 and i == j:
+                                            self.valuation_dictionary[(b, t, i, j)] = values[t, i]
+                                        elif n_particles == 2 and i != j:
+                                            self.valuation_dictionary[(b, t, i, j)] = values[t, i, j]
+                            # self.valuation_dictionary[b] = values
+
+        for fns, cause in zip(
+            [problematic_functions, too_small_functions, all_zero_functions],
+            ["cause numerical instability", "are too small", "are all zeros"]):
+            print("removing ", len(fns), "/", self.basis_size,
+                  "basis functions that", cause)
+
+        bad_functions = problematic_functions.union(too_small_functions).union(all_zero_functions)
+        self.remove_from_basis(bad_functions)
+
+        # Now let's figure out if any of the basis functions are just linear rescalings of others
+        # Compute the signature of each basis function, which is the vector of its valuations
+        # Check if any signatures are in constant proportion
+        problematic_functions = set()
+        signature = {}
+        for (n_particles, n_indices), bs in self.basis.items():
+            for b in bs:
+                if n_particles == 1:
+                    particle_pairs = [(i,i) for i in range(N)]
+                else:
+                    particle_pairs = [(i,j) for i in range(N) for j in range(N) if i != j]
+
+                sig = np.stack([self.valuation_dictionary[(b, t, i, j)]
+                                for t in range(T)
+                                for i,j in particle_pairs])
+                sig = np.reshape(sig, -1)
+                sig = sig / np.linalg.norm(sig)
+
+                signature[b] = sig
+
+        for n_particles in [1,2]:
+            for n_indices in [1,2]:
+                for n, b1 in enumerate(self.basis[(n_particles, n_indices)]):
+                    for b2 in self.basis[(n_particles, n_indices)][:n]:
+                        if arrays_proportional(signature[b1], signature[b2]):
+                            problematic_functions.add(b1)
+                            break
+
+        print("Removing ", len(problematic_functions), "/", self.basis_size,
+              "basis functions that are redundant")
+        self.remove_from_basis(problematic_functions)
+
+        return self.valuation_dictionary
+
     def evaluate_basis_functions(self, x, v):
         """
         returns: dictionary mapping (b, t, i, j) to its vector or matrix valuation, where:
@@ -435,8 +545,25 @@ class AccelerationLearner():
         D = x.shape[2]
         assert D == self.dimension
 
-        # see comment for structure of valuations
+        basis = self.basis
+        # valuations = self.evaluate_basis_functions_vectorized(x, v)
+        # print('evaluate')
+        # self.basis = basis
         valuations = self.evaluate_basis_functions(x, v)
+        # v1 = len([k for k in valuations if k not in valuations2])
+        # if v1 > 0:
+        #     print('number not in v2:', v1)
+        #     print('number in v2:', len(valuations) - v1)
+        #     print('number not in v1:', len([k for k in valuations2 if k not in valuations]))
+        #     s1 = set([k[0] for k in valuations if k not in valuations2])
+        #     s2 = set([k[0] for k in valuations if k in valuations2])
+        #     print(s1)
+        #     print(s2)
+        #     print(s1.intersection(s2))
+        # for k in valuations:
+        #     assert k in valuations2, f'{k} not in valuations2'
+        #     np.testing.assert_array_equal(valuations[k], valuations2[k])
+
         self.valuations = valuations
 
         # Construct the regression problem
@@ -483,7 +610,7 @@ class AccelerationLearner():
 
                     X.append(feature_dictionary)
 
-        feature_names = list(sorted({ fn for fd in X for fn in fd.keys() }))
+        feature_names = list(sorted({fn for fd in X for fn in fd.keys()}))
 
         if arguments.group or arguments.mirror:
             groups = np.array([basis_ids[(b,u) if len(rest) == 2 else b] for b, *rest, u in feature_names])
@@ -756,8 +883,8 @@ if __name__ == '__main__':
         ("magnet2", simulate_charge_dipole),
         ("boids", lambda: load_boids(i=1)),
         ("spring", simulate_elastic_pendulum),
-        # ("locusts", lambda: load_locusts('01EQ20191203_tracked.csv', speedup=20, start=3000, end=6000, smoothing=500)),
-        ("locusts", lambda: load_locusts('05UE20200625_tracked.csv', speedup=20, start=10000, end=11000, smoothing=500)),
+        # ("locusts", lambda: load_locusts('01EQ20191203', speedup=1, start=3000, end=6000, smoothing=1000)),
+        ("locusts", lambda: load_locusts('05UE20200625', speedup=20, start=10000, end=11000, smoothing=500)),
         ("circle", simulate_circle),
     ]
 

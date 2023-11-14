@@ -3,6 +3,8 @@ import numpy as np
 import einops
 from utils import assert_shape
 from matplotlib import pyplot as plt
+import scipy.io
+from utils import assert_equal
 
 def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
     '''
@@ -18,12 +20,46 @@ def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
 
     Returns a (45000, N, 2) numpy array of positions
     '''
-    data = pd.read_csv(path + filename, sep=',', header=0, index_col=0).to_numpy()
+    data_path = path + filename + '_tracked.csv'
+    data = pd.read_csv(data_path, sep=',', header=0, index_col=0).to_numpy()
     data = einops.rearrange(data, '(a b) c -> a b c', a=45000)
     data = data[:, :, 1:3]
     data = data.astype(float)
 
-    return smooth_data(data, smoothing=smoothing)
+    annotation_path = path + filename + '_annotation.mat'
+    annotations = scipy.io.loadmat(annotation_path)
+
+    arena_radius_cm = annotations['Arena'][0,0][0][0][0]
+    assert_equal(arena_radius_cm, 45)
+
+    p = annotations['Comment']
+    p1, p2 = p[0][0][0], p[1][0][0]
+    assert p1 in ['PatchA: HQ', 'PatchB: LQ', 'PatchA: LQ', 'PatchB: HQ']
+    assert p2 in ['PatchA: HQ', 'PatchB: LQ', 'PatchA: LQ', 'PatchB: HQ']
+    assert 'A' in p1 and 'B' in p2
+    is_patchA_HQ = 'HQ' in p1
+    is_patchB_HQ = 'HQ' in p2
+
+    patchA_pos = annotations['PatchA'][0][0][0][0]
+    patchA_rad = annotations['PatchA'][0][0][1][0][0]
+    patchB_pos = annotations['PatchB'][0][0][0][0]
+    patchB_rad = annotations['PatchB'][0][0][1][0][0]
+    assert_equal(type(patchB_pos), type(patchA_pos), np.ndarray)
+    assert_equal(len(patchA_pos), len(patchB_pos), 2)
+    assert_equal(type(patchA_rad), type(patchB_rad), np.float64)
+
+    is_valid = 1 in annotations['Valid']
+    assert is_valid
+
+    info = {
+        'posA': patchA_pos,
+        'radA': patchA_rad,
+        'isA_HQ': is_patchA_HQ,
+        'posB': patchB_pos,
+        'radB': patchB_rad,
+        'isB_HQ': is_patchB_HQ,
+    }
+    return smooth_data(data, smoothing=smoothing), info
 
 
 def smooth_data(data, smoothing=0):
@@ -120,11 +156,23 @@ def visualize_data(data, speedup=1):
         pygame.display.set_caption(time_str)
 
 
+def add_food_particles(data, info):
+    # data is a (T, N, 2) numpy array of positions
+    # info contains the position of the food patches via info['posA'] and info['posB']
+    # return a (T, N+2, 2) array
+    data2 = np.zeros((data.shape[0], data.shape[1]+2, 2))
+    data2[:, :-2] = data
+    data2[:, -2] = info['posA']
+    data2[:, -1] = info['posB']
+    return data2
+
+
 def load_locusts(filename, speedup=10, start=0, end=None, smoothing=0):
-    data = import_data(filename, smoothing=smoothing)
+    data, info = import_data(filename, smoothing=smoothing)
     # we lose two time steps when calculating acceleration
     # so that the total number is still even
     data = data[start:end+2*speedup:speedup]
+    data = add_food_particles(data, info)
     return convert_to_xvfa_data(data)
 
 def convert_to_xvfa_data(data):
@@ -192,10 +240,10 @@ def simulate_random_walks(n=5, T=1000, std=0.00001, seed=1):
 
 if __name__ == '__main__':
     # first num is number of locusts, ue means unequal food sources, eq equal
-    # data = import_data('30UE20191206_tracked.csv', smoothing=500)
+    # data, info = import_data('30UE20191206_tracked.csv', smoothing=500)
 
-    # data = import_data('05EQ20200615_tracked.csv', smoothing=500)
-    # data = import_data('05UE20200625_tracked.csv', smoothing=50)
+    # data, info = import_data('05EQ20200615_tracked.csv', smoothing=500)
+    # data, info = import_data('05UE20200625_tracked.csv', smoothing=50)
     import glob
     # get 10 different n=10 datasets
     # data_files = glob.glob('Locusts/Data/Tracking/05EQ*tracked.csv')[:10]
@@ -204,19 +252,22 @@ if __name__ == '__main__':
 
     # for data_file in data_files[3:]:
     #     for smoothing in [500]:
-    #         data = import_data(data_file, smoothing=smoothing)
+    #         data, info = import_data(data_file, smoothing=smoothing)
     #         data = data[:5000]
     #         visualize_data(data, speedup=30)
     #         print('next')
 
     # data = smooth_data(simulate_random_walks(n=5, T=10000, std=0.0001, seed=3), smoothing=100)
-    # data = import_data('05UE20200625_tracked.csv', smoothing=500)
-    # data = import_data('15EQ20191204_tracked.csv', smoothing=500)
-    data = import_data('30EQ20191203_tracked.csv', smoothing=100)
-    visualize_data(data, speedup=30)
+    # data, info = import_data('05UE20200625_tracked.csv', smoothing=500)
+    data, info = import_data('15EQ20191204_tracked.csv', smoothing=0)
+    # data, info = import_data('30EQ20191203_tracked.csv', smoothing=100)
+
+    # data, info = import_data('01EQ20191203_tracked.csv', smoothing=0)
+
+    visualize_data(data, speedup=10)
 #
 
-    # data = import_data('01EQ20191203_tracked.csv', smoothing=1000)
+    # data, info = import_data('01EQ20191203_tracked.csv', smoothing=1000)
     # data = data[3000:6000]
     # data = data[10000:14000]
     # vel_magnitudes = detect_segments(data)

@@ -4,7 +4,18 @@ import numpy as np
 import math
 import utils
 
+# let's think through this
+# originally, environment is something like 'V': np.array
+# when we pass it into arg.evaluate, it returns the np.array
+# then we pass each np.array separately into vector_op, and they get rolled up into *args
+# so each element of the args tuple is a np.array
+# so it really is more complicated.
+
 class Expression():
+    def evaluate_vectorized(self, environment: dict[str, np.ndarray]):
+        # normally, env is something like 'V': vec, 'R': vec, etc.
+        return np.stack([self.evaluate({k: environment[k][i] for k in environment})
+                         for i in range(len(next(iter(environment.values()))))])
 
     def evaluate(self, environment):
         return self.__class__.op(*[arg.evaluate(environment) for arg in self.arguments()])
@@ -20,7 +31,6 @@ class Expression():
 
     def __str__(self):
         return self.__class__.__name__ + '(' + ', '.join(str(a) for a in self.arguments()) + ')'
-
 
     @property
     def return_type(self):
@@ -57,6 +67,9 @@ class Real(Expression):
     def evaluate(self, environment):
         return environment[self.name]
 
+    def evaluate_vectorized(self, environment):
+        return environment[self.name]
+
     def arguments(self): return []
 
 class Vector(Expression):
@@ -73,6 +86,9 @@ class Vector(Expression):
         return self.name
 
     def evaluate(self, environment):
+        return environment[self.name]
+
+    def evaluate_vectorized(self, environment):
         return environment[self.name]
 
     def arguments(self): return []
@@ -123,9 +139,9 @@ class Inner(Expression):
     def evaluate(self, environment):
         x = self.x.evaluate(environment)
         y = self.y.evaluate(environment)
-        if isinstance(x, np.ndarray):
-            return np.sum(x * y, -1)
-        return (x * y).sum(-1).unsqueeze(-1)
+        assert isinstance(x, np.ndarray)
+        return np.sum(x * y, -1)
+        # return (x * y).sum(-1).unsqueeze(-1)
 
     def arguments(self): return [self.x, self.y]
 
@@ -963,3 +979,7 @@ def test_pretty_print_to_expr():
         pp = expr.pretty_print()
         expr2 = pretty_print_to_expr(pp)
         assert pp == expr2.pretty_print(), f'{pp} != {expr2.pretty_print()}'
+
+
+if __name__ == '__main__':
+    expr = pretty_print_to_expr('(v/ (hat R) (dp R R))')

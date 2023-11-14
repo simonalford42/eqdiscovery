@@ -53,7 +53,6 @@ def animate2(x, fn='gravity', other=None):
         biggest = max(biggest, other_biggest)
         T = min(T, other.shape[0])
 
-
     for t in range(T):
         plt.figure()
         plt.xlim([smallest, biggest])

@@ -59,13 +59,17 @@ def next_unused_path(path, extend_fn=lambda i: f'_{i}', return_i=False):
         return path
 
 
-def assert_equal(a, b):
-    if np.ndarray in [type(a), type(b)]:
-        assert np.array_equal(a, b), f'a != b: a:{a}, b:{b}'
-    elif torch.Tensor in [type(a), type(b)]:
-        assert torch.equal(a, b), f'a != b: a:{a}, b:{b}'
-    else:
-        assert a == b, f'a != b: a:{a}, b:{b}'
+def assert_equal(*args):
+    # for a, b, c, etc. check a == b, b == c, etc.
+    # for a, b in zip(args[:-1], args[1:]):
+    for i, j in zip(range(len(args)-1), range(1, len(args))):
+        a, b = args[i], args[j]
+        if np.ndarray in [type(a), type(b)]:
+            assert np.array_equal(a, b), f'a{i} != a{j}: a{i}:{a}, a{j}:{b}'
+        elif torch.Tensor in [type(a), type(b)]:
+            assert torch.equal(a, b), f'a{i} != a{j}: a{i}:{a}, a{j}:{b}'
+        else:
+            assert a == b, f'a{i} != a{j}: a{i}:{a}, a{j}:{b}'
 
 
 def assert_shape(a: torch.Tensor, shape: tuple):
