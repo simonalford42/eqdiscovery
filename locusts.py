@@ -106,8 +106,10 @@ def visualize_data(data, info=None, speedup=1):
     data = data[::K]
 
 
-    maxv = np.max(data)
-    minv = np.min(data)
+    maxv = 1
+    minv = -1
+    assert np.min(data) >= minv
+    assert np.max(data) <= maxv
     # minx, maxx = np.min(data[:, :, 0]), np.max(data[:, :, 0])
     # miny, maxy = np.min(data[:, :, 1]), np.max(data[:, :, 1])
 
@@ -284,8 +286,10 @@ if __name__ == '__main__':
     # data, info = import_data('30UE20191206', smoothing=0)
 
     # data, info = import_data('01EQ20191203', smoothing=0)
+    data, info = import_data('01EQ20191203', smoothing=1000)
+    data = data[4000:6000]
 
-    visualize_data(data, info=info, speedup=30)
+    visualize_data(data, info=info, speedup=10)
 #
 
     # data, info = import_data('01EQ20191203', smoothing=1000)

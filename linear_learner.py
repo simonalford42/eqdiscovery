@@ -752,7 +752,7 @@ def run_linear_learner(arguments, data_dict):
             k = arguments.sample_every
             # sample every k'th time step of x
             x = x[::k, :, :]
-            print('sampling every kth time step, k=', k)
+            print('sampling every kth time step, k =', k)
             dimension = 3 if arguments.embed else x.shape[-1]
 
             al = AccelerationLearner(dimension,
@@ -834,7 +834,8 @@ OPSET_DICT = {
     ],
 }
 OPSET_DICT['boids'] = OPSET_DICT['default'] + OPSET_DICT['boids']
-OPSET_DICT['locusts'] = OPSET_DICT['default'] + [Perp,]
+OPSET_DICT['locusts1'] = OPSET_DICT['default'] + [Perp,]
+OPSET_DICT['locusts5'] = OPSET_DICT['default'] + [Perp,]
 
 
 if __name__ == '__main__':
@@ -891,7 +892,7 @@ if __name__ == '__main__':
         ("magnet2", simulate_charge_dipole),
         ("boids", lambda: load_boids(i=1)),
         ("spring", simulate_elastic_pendulum),
-        ("locusts1", lambda: load_locusts('01EQ20191203', speedup=10, start=4000, end=6000, smoothing=1000)),
+        ("locusts1", lambda: load_locusts('01EQ20191203', speedup=1, start=3000, end=6000, smoothing=1000)),
         ("locusts5", lambda: load_locusts('05UE20200625', speedup=20, start=10000, end=11000, smoothing=0)),
         ("circle", simulate_circle),
     ]
