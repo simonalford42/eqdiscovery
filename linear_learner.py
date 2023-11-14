@@ -162,6 +162,8 @@ class AccelerationLearner():
                                      for e in self.basis[(2,2)]
                                      if "R" in e.pretty_print() or \
                                      ("V1" in e.pretty_print() and 'V2' in e.pretty_print())]
+
+
             else:
                 self.basis[(2,1)], self.basis[(2,2)] = [], []
 
@@ -748,11 +750,17 @@ def run_linear_learner(arguments, data_dict):
             print(f'Testing physics learner on {name}')
 
             x, v, _, a = data_dict[name]
-            # x shape is [T, N, D]
-            k = arguments.sample_every
-            # sample every k'th time step of x
-            x = x[::k, :, :]
-            print('sampling every kth time step, k =', k)
+
+            if arguments.sample_every != 1:
+                k = arguments.sample_every
+                # sample every k'th time step of x
+                x = x[::k, :, :]
+                print('sampling every kth time step, k =', k)
+
+            if arguments.sample_first != 1:
+                x = x[:int(len(x)/arguments.sample_first)]
+                print(f'sampling just the first 1/{arguments.sample_first}')
+
             dimension = 3 if arguments.embed else x.shape[-1]
 
             al = AccelerationLearner(dimension,
@@ -833,6 +841,7 @@ OPSET_DICT = {
         Scale,
     ],
 }
+
 OPSET_DICT['boids'] = OPSET_DICT['default'] + OPSET_DICT['boids']
 OPSET_DICT['locusts1'] = OPSET_DICT['default'] + [Perp,]
 OPSET_DICT['locusts5'] = OPSET_DICT['default'] + [Perp,]
@@ -864,6 +873,8 @@ if __name__ == '__main__':
     parser.add_argument("--split_length", '-sl', default=1, type=int, help='length to split sequence into, if --split is enabled')
     parser.add_argument("--opset", '-o', default=None, type=str, help='op set to use')
     parser.add_argument("--sample_every", '-k', default=1, type=int, help='sample every k values of the input data')
+    parser.add_argument("--sample_first", '-k2', default=1, type=int, help='take the first 1/k2 of the data')
+
     parser.add_argument("--start", default=0, type=int, help='start ix for locust data')
     parser.add_argument("--save", default=None, type=str, help='path to save laws to')
     parser.add_argument("--load", default=None, type=str, help='path to load laws (e.g. to simulate)')

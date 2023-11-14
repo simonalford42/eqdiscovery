@@ -3,6 +3,7 @@ import random
 import numpy as np
 import math
 import utils
+from utils import assert_equal
 
 # let's think through this
 # originally, environment is something like 'V': np.array
