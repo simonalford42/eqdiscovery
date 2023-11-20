@@ -282,12 +282,12 @@ if __name__ == '__main__':
 
     # data = smooth_data(simulate_random_walks(n=5, T=10000, std=0.0001, seed=3), smoothing=100)
     # data, info = import_data('05UE20200625', smoothing=0)
-    data, info = import_data('15EQ20191204', smoothing=0)
+    # data, info = import_data('15EQ20191204', smoothing=0)
     # data, info = import_data('30UE20191206', smoothing=0)
 
     # data, info = import_data('01EQ20191203', smoothing=0)
     data, info = import_data('01EQ20191203', smoothing=1000)
-    data = data[4000:6000]
+    data = data[3000:6000]
 
     visualize_data(data, info=info, speedup=10)
 #

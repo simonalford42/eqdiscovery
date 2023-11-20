@@ -903,7 +903,7 @@ if __name__ == '__main__':
         ("magnet2", simulate_charge_dipole),
         ("boids", lambda: load_boids(i=1)),
         ("spring", simulate_elastic_pendulum),
-        ("locusts1", lambda: load_locusts('01EQ20191203', speedup=1, start=3000, end=6000, smoothing=1000)),
+        ("locusts1", lambda: load_locusts('01EQ20191203', speedup=20, start=3000, end=4000, smoothing=100)),
         ("locusts5", lambda: load_locusts('05UE20200625', speedup=20, start=10000, end=11000, smoothing=0)),
         ("circle", simulate_circle),
     ]
@@ -918,6 +918,7 @@ if __name__ == '__main__':
                                         if name == arguments.simulation]
 
     print(f'{arguments=}')
+
     data_dict = {}
     for name, callback in experiments:
         data_dict[name] = callback()
