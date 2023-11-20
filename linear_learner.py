@@ -13,6 +13,7 @@ import group_lasso
 from locusts import load_locusts
 import pickle
 
+import wandb
 
 # from nearest_neighbor import FastNN
 from force_learner import *
@@ -80,9 +81,13 @@ def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False,
     coefficients = model.coef_
 
     print(" ==  == finished sparse regression ==  == ")
-    print("rank", LinearRegression(fit_intercept=False).fit(X, y).rank_, "/", min(X.shape))
-    print("score", model.score(X, y))
-    print("mse", mean_squared_error(y, model.predict(X)))
+    rank = LinearRegression(fit_intercept=False).fit(X, y).rank_
+    score = model.score(X, y)
+    mse = mean_squared_error(y, model.predict(X))
+    wandb.log({'rank': rank, 'score': score, 'mse': mse})
+    print("rank", rank, "/", min(X.shape))
+    print("score", score)
+    print("mse", mse)
     print()
 
     coefficients = y_scale * coefficients / scaler.scale_
@@ -878,6 +883,7 @@ if __name__ == '__main__':
     parser.add_argument("--start", default=0, type=int, help='start ix for locust data')
     parser.add_argument("--save", default=None, type=str, help='path to save laws to')
     parser.add_argument("--load", default=None, type=str, help='path to load laws (e.g. to simulate)')
+    parser.add_argument("--slurm_id", default=None, type=int)
 
     arguments = parser.parse_args()
     assert not (arguments.split and arguments.group), 'split and group are incompatible'
@@ -918,6 +924,8 @@ if __name__ == '__main__':
                                         if name == arguments.simulation]
 
     print(f'{arguments=}')
+    wandb.init(project="eqdiscovery", config=vars(arguments))
+
     data_dict = {}
     for name, callback in experiments:
         data_dict[name] = callback()
@@ -939,4 +947,3 @@ if __name__ == '__main__':
             import sys; sys.exit(0)
 
     run_linear_learner(arguments, data_dict)
-
