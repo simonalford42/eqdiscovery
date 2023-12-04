@@ -5,9 +5,12 @@ from utils import assert_shape
 from matplotlib import pyplot as plt
 import scipy.io
 from utils import assert_equal
+import random
 
 def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
     '''
+    filename should be something like '15UE20200509'
+
 		1.1. _tracked.csv
 			1.1.1. Number of variables	: 5
 			1.1.2. Number of rows		: N*45000 frames (N=number of animals)
@@ -18,7 +21,8 @@ def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
 				pos_y				: animal's normalized y-position in video frame (blocks of N)
 				id					: current animal ID (N unique entries)
 
-    Returns a (45000, N, 2) numpy array of positions
+    Returns data, info, where data is a (45000, N, 2) numpy array of positions,
+    info has the food positions and other info
     '''
     data_path = path + filename + '_tracked.csv'
     data = pd.read_csv(data_path, sep=',', header=0, index_col=0).to_numpy()
@@ -108,8 +112,8 @@ def visualize_data(data, info=None, speedup=1):
 
     maxv = 1
     minv = -1
-    assert np.min(data) >= minv
-    assert np.max(data) <= maxv
+    assert np.min(data) >= minv, print(np.min(data), minv)
+    assert np.max(data) <= maxv, print(np.max(data), maxv)
     # minx, maxx = np.min(data[:, :, 0]), np.max(data[:, :, 0])
     # miny, maxy = np.min(data[:, :, 1]), np.max(data[:, :, 1])
 
@@ -187,6 +191,8 @@ def add_food_particles(data, info):
     data2[:, :-2] = data
     data2[:, -2] = info['posA']
     data2[:, -1] = info['posB']
+    # data2[:, -2] = (random.random(), random.random())
+    # data2[:, -1] = (random.random(), random.random())
     return data2
 
 
@@ -282,14 +288,24 @@ if __name__ == '__main__':
 
     # data = smooth_data(simulate_random_walks(n=5, T=10000, std=0.0001, seed=3), smoothing=100)
     # data, info = import_data('05UE20200625', smoothing=0)
+    # data, info = import_data('05UE20200708', smoothing=0)
     # data, info = import_data('15EQ20191204', smoothing=0)
+    # data, info = import_data('15UE20200509', smoothing=0)
     # data, info = import_data('30UE20191206', smoothing=0)
 
     # data, info = import_data('01EQ20191203', smoothing=0)
-    data, info = import_data('01EQ20191203', smoothing=1000)
-    data = data[3000:6000]
+    # data, info = import_data('01EQ20191203', smoothing=1000)
+    # data = data[3000:6000]
 
-    visualize_data(data, info=info, speedup=10)
+    while True:
+        # get a random file and visualize it
+        data_files = glob.glob('Locusts/Data/Tracking/05EQ*tracked.csv')
+        data_file = random.choice(data_files)
+        # turn the file name into something like 05UE20200625
+        data_file = data_file.split('/')[-1].split('_')[0]
+        data, info = import_data(data_file, smoothing=0)
+
+        visualize_data(data, info=info, speedup=50)
 #
 
     # data, info = import_data('01EQ20191203', smoothing=1000)

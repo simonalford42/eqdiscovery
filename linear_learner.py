@@ -7,7 +7,6 @@ from animate import animate
 from enumerate_expressions import *
 from boids import load_boids
 from sklearn.linear_model import LinearRegression, Lasso, Ridge, ElasticNet
-from sklearn.metrics import mean_squared_error
 from sklearn import preprocessing
 import group_lasso
 from locusts import load_locusts
@@ -22,11 +21,14 @@ import random
 import utils
 import einops
 
+EVAL_DATA = None
 
-def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False, group_reg=None, l1_reg=None):
-    """short and modular helper function"""
+
+def preprocess(X, y, alpha, feature_cost, groups, mirror, group_reg, l1_reg):
     if groups is not None:
         num_groups = max(groups) + 1
+
+    old_X = None
 
     if mirror:
         '''
@@ -47,7 +49,7 @@ def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False,
                 assert np.all(costs == costs[0])
                 feature_cost2[g] = costs[0]
 
-            X2[:,g] = np.sum(X[:,group_indices], -1)
+            X2[:,g] = np.sum(X2[:,group_indices], -1)
 
         old_X = X
         X = X2
@@ -66,6 +68,15 @@ def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False,
     y_scale = np.mean(y*y)**0.5
     y = y/y_scale
 
+    return X, y, y_scale, scaler, old_X
+
+
+def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False, group_reg=None, l1_reg=None):
+    if groups is not None:
+        num_groups = max(groups) + 1
+
+    X, y, y_scale, scaler, old_X = preprocess(X, y, alpha, feature_cost, groups, mirror, group_reg, l1_reg)
+
     if groups is not None:
         if l1_reg is None:
             l1_reg = alpha
@@ -83,11 +94,26 @@ def sparse_regression(X, y, alpha, feature_cost=None, groups=None, mirror=False,
     print(" ==  == finished sparse regression ==  == ")
     rank = LinearRegression(fit_intercept=False).fit(X, y).rank_
     score = model.score(X, y)
-    mse = mean_squared_error(y, model.predict(X))
+    y_pred = model.predict(X)
+    # average mse is better to be invariant to the size of the input
+    # but gives distorted means if we add targets that are all zeros
+    # so do average, but ignore elements that are all zeros
+    # since they always get perfect prediction
+    mse = np.array([(ai - bi)**2 for (ai, bi) in zip(y, y_pred) if ai != 0]).mean()
     wandb.log({'rank': rank, 'score': score, 'mse': mse})
     print("rank", rank, "/", min(X.shape))
     print("score", score)
     print("mse", mse)
+    print()
+
+    # evaluate on X2, Y2
+    global X_matrix2, Y2
+    X_matrix2, Y2, _, _, _ = preprocess(X_matrix2, Y2, alpha, feature_cost, groups, mirror, group_reg, l1_reg)
+    score2 = model.score(X_matrix2, Y2)
+    y_pred2 = model.predict(X_matrix2)
+    mse2 = np.array([(ai - bi)**2 for (ai, bi) in zip(Y2, y_pred2) if ai != 0]).mean()
+    print("score2", score2)
+    print("mse2", mse2)
     print()
 
     coefficients = y_scale * coefficients / scaler.scale_
@@ -537,44 +563,8 @@ class AccelerationLearner():
 
         return self.valuation_dictionary
 
-
-    def fit(self, x, v, a):
-
-        # extract shapes and make sure everything has the right dimensions
-        T = x.shape[0]
-        N = x.shape[1]
-        if self.dimension != x.shape[2]:
-            missing_dimensions = self.dimension - x.shape[2]
-            assert missing_dimensions > 0
-            # expand to give extra dimension
-            x = np.concatenate([x, np.zeros((*x.shape[:-1], missing_dimensions))], -1)
-            v = np.concatenate([v, np.zeros((*v.shape[:-1], missing_dimensions))], -1)
-            a = np.concatenate([a, np.zeros((*a.shape[:-1], missing_dimensions))], -1)
-
-        D = x.shape[2]
-        assert D == self.dimension
-
-        basis = self.basis
-        # valuations = self.evaluate_basis_functions_vectorized(x, v)
-        # print('evaluate')
-        # self.basis = basis
-        valuations = self.evaluate_basis_functions(x, v)
-        # v1 = len([k for k in valuations if k not in valuations2])
-        # if v1 > 0:
-        #     print('number not in v2:', v1)
-        #     print('number in v2:', len(valuations) - v1)
-        #     print('number not in v1:', len([k for k in valuations2 if k not in valuations]))
-        #     s1 = set([k[0] for k in valuations if k not in valuations2])
-        #     s2 = set([k[0] for k in valuations if k in valuations2])
-        #     print(s1)
-        #     print(s2)
-        #     print(s1.intersection(s2))
-        # for k in valuations:
-        #     assert k in valuations2, f'{k} not in valuations2'
-        #     np.testing.assert_array_equal(valuations[k], valuations2[k])
-
-        self.valuations = valuations
-
+    def construct_regression_problem(self, x, a, valuations, arguments):
+        T, N, D = x.shape
         # Construct the regression problem
         # We are predicting acceleration
         Y = []
@@ -658,6 +648,34 @@ class AccelerationLearner():
 
         feature_cost = np.array([ self.penalty*int(basis_function.return_type == "matrix") + 1
                                 for (basis_function, *rest) in feature_names ])
+
+        return X_matrix, Y, feature_names, groups, feature_cost
+
+
+    def fit(self, x, v, a):
+
+        # extract shapes and make sure everything has the right dimensions
+        T = x.shape[0]
+        N = x.shape[1]
+        if self.dimension != x.shape[2]:
+            missing_dimensions = self.dimension - x.shape[2]
+            assert missing_dimensions > 0
+            # expand to give extra dimension
+            x = np.concatenate([x, np.zeros((*x.shape[:-1], missing_dimensions))], -1)
+            v = np.concatenate([v, np.zeros((*v.shape[:-1], missing_dimensions))], -1)
+            a = np.concatenate([a, np.zeros((*a.shape[:-1], missing_dimensions))], -1)
+
+        D = x.shape[2]
+        assert D == self.dimension
+
+        basis = self.basis
+        valuations = self.evaluate_basis_functions(x, v)
+        x2, v2, _, a2 = EVAL_DATA
+        valuations2 = self.evaluate_basis_functions(x2, v2)
+
+        X_matrix, Y, feature_names, groups, feature_cost = self.construct_regression_problem(x, a, valuations, arguments)
+        global X_matrix2, Y2
+        X_matrix2, Y2, _, _, _ = self.construct_regression_problem(x2, a2, valuations2, arguments)
 
         coefficients = sparse_regression(X_matrix, Y, alpha=arguments.alpha, feature_cost=feature_cost, groups=groups, mirror=arguments.mirror)
 
@@ -884,6 +902,7 @@ if __name__ == '__main__':
     parser.add_argument("--save", default=None, type=str, help='path to save laws to')
     parser.add_argument("--load", default=None, type=str, help='path to load laws (e.g. to simulate)')
     parser.add_argument("--slurm_id", default=None, type=int)
+    parser.add_argument("--no_log", action='store_true', help='disable wandb logging')
 
     arguments = parser.parse_args()
     assert not (arguments.split and arguments.group), 'split and group are incompatible'
@@ -898,36 +917,42 @@ if __name__ == '__main__':
 
     arguments.ops = OPSET_DICT[key]
 
-    experiments = [
-        ("drag3", simulate_drag3),
-        ("falling", simulate_falling),
-        ("orbit", simulate_circular_orbit),
-        ("orbit2", simulate_2_orbits),
-        ("drag1", simulate_drag1),
-        ("drag2", simulate_drag2),
-        ("magnet1", simulate_charge_in_uniform_magnetic_field),
-        ("magnet2", simulate_charge_dipole),
-        ("boids", lambda: load_boids(i=1)),
-        ("spring", simulate_elastic_pendulum),
-        ("locusts1", lambda: load_locusts('01EQ20191203', speedup=20, start=3000, end=4000, smoothing=100)),
-        ("locusts5", lambda: load_locusts('05UE20200625', speedup=20, start=10000, end=11000, smoothing=0)),
-        ("circle", simulate_circle),
-    ]
+    experiments = {
+        "drag3": simulate_drag3,
+        "falling": simulate_falling,
+        "orbit": simulate_circular_orbit,
+        "orbit2": simulate_2_orbits,
+        "drag1": simulate_drag1,
+        "drag2": simulate_drag2,
+        "magnet1": simulate_charge_in_uniform_magnetic_field,
+        "magnet2": simulate_charge_dipole,
+        "boids": lambda: load_boids(i=1),
+        "spring": simulate_elastic_pendulum,
+        "locusts1": lambda: load_locusts('01EQ20191203', speedup=10, start=3000, end=6000, smoothing=100),
+        "locusts1-2": lambda: load_locusts('01EQ20191203', speedup=10, start=6000, end=9000, smoothing=100),
+        "locusts5": lambda: load_locusts('05UE20200625', speedup=20, start=10000, end=11000, smoothing=0),
+        "circle": simulate_circle,
+    }
+
+    EVAL_DATA = experiments['locusts1-2']()
 
     groups = {'physics': [ "drag3", "falling", "orbit", "orbit2", "drag1", "drag2", "magnet1", "magnet2" ] }
 
     if arguments.simulation in groups:
-        experiments = [(name, callback) for name, callback in experiments
-                                        if name in groups[arguments.simulation]]
+        experiments = {name: callback for name, callback in experiments.items()
+                                        if name in groups[arguments.simulation]}
     else:
-        experiments = [(name, callback) for name, callback in experiments
-                                        if name == arguments.simulation]
+        experiments = {name: callback for name, callback in experiments.items()
+                                        if name == arguments.simulation}
 
     print(f'{arguments=}')
-    wandb.init(project="eqdiscovery", config=vars(arguments))
+    wandb.init(project="eqdiscovery",
+               config=vars(arguments),
+               mode='disabled' if arguments.no_log else 'online',
+    )
 
     data_dict = {}
-    for name, callback in experiments:
+    for name, callback in experiments.items():
         data_dict[name] = callback()
 
         if arguments.noise:
