@@ -295,17 +295,19 @@ if __name__ == '__main__':
 
     # data, info = import_data('01EQ20191203', smoothing=0)
     # data, info = import_data('01EQ20191203', smoothing=1000)
+    data, info = import_data('01EQ20200917_3', smoothing=0)
     # data = data[3000:6000]
+    visualize_data(data, speedup=20)
 
-    while True:
-        # get a random file and visualize it
-        data_files = glob.glob('Locusts/Data/Tracking/05EQ*tracked.csv')
-        data_file = random.choice(data_files)
-        # turn the file name into something like 05UE20200625
-        data_file = data_file.split('/')[-1].split('_')[0]
-        data, info = import_data(data_file, smoothing=0)
+    # while True:
+    #     # get a random file and visualize it
+    #     data_files = glob.glob('Locusts/Data/Tracking/05EQ*tracked.csv')
+    #     data_file = random.choice(data_files)
+    #     # turn the file name into something like 05UE20200625
+    #     data_file = data_file.split('/')[-1].split('_')[0]
+    #     data, info = import_data(data_file, smoothing=0)
 
-        visualize_data(data, info=info, speedup=50)
+    #     visualize_data(data, info=info, speedup=50)
 #
 
     # data, info = import_data('01EQ20191203', smoothing=1000)
