@@ -1,4 +1,7 @@
 out
+locust_transformer
+# datasets
+*.pkl
 
 # data
 Locusts
