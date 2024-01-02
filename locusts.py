@@ -7,6 +7,10 @@ import scipy.io
 from utils import assert_equal
 import random
 
+# FPS = 25
+# DT = 1 / FPS
+DT = 1
+
 def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
     '''
     filename should be something like '15UE20200509'
@@ -29,6 +33,7 @@ def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
     data = einops.rearrange(data, '(a b) c -> a b c', a=45000)
     data = data[:, :, 1:3]
     data = data.astype(float)
+
 
     annotation_path = path + filename + '_annotation.mat'
     annotations = scipy.io.loadmat(annotation_path)
@@ -62,6 +67,7 @@ def import_data(filename, path='Locusts/Data/Tracking/', smoothing=0):
         'posB': patchB_pos,
         'radB': patchB_rad,
         'isB_HQ': is_patchB_HQ,
+        'n': data.shape[1],
     }
     return smooth_data(data, smoothing=smoothing), info
 
@@ -213,10 +219,13 @@ def convert_to_xvfa_data(data):
     # convert data dtype from object to float
     data = data.astype(float)
     x = data
-    v = data[1:] - data[:-1]
-    a = v[1:] - v[:-1]
+    v = (1/DT) * (data[1:] - data[:-1])
+    a = (1/DT) * (v[1:] - v[:-1])
 
     T = len(a)
+    # we lose two time steps when calculating acceleration
+    # note: the fact that a[0] depends on x[1] and x[2] is as it should:
+    # assuming dt=1, we want x[1] = x[0] + v[0]
     x = x[:T]
     v = v[:T]
     a = a[:T]
