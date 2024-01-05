@@ -18,4 +18,4 @@
 source /home/sca63/mambaforge/etc/profile.d/conda.sh
 conda activate eqdiscovery
 
-python -u train_locusts.py --slurm_id $SLURM_JOB_ID "$@"
+python -u train_locusts.py --slurm_id $SLURM_JOB_ID --slurm_name $SLURM_JOB_NAME "$@"

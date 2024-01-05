@@ -16,6 +16,28 @@ import pickle
 IN_DIM = 5
 OUT_DIM = 2
 
+class RFF(nn.Module):
+    '''
+    - normalize position data to be in [0, 1]
+    - sample random b1, b2 from N(0, 1).
+    - calculate y = b1 x + b2 y
+    - use cos(2 pi y), sin(2 pi y) as features
+    '''
+    def __init__(self, in_dim=2, out_dim=10, sigma=1):
+        super().__init__()
+        assert out_dim % 2 == 0, "n_features must be even"
+        self.b = nn.Parameter(torch.randn((out_dim // 2, in_dim)) / sigma, requires_grad=False)
+
+    def forward(self, x):
+        '''
+        x: [..., D]
+        returns: [..., out_dim]
+        '''
+        y = x @ self.b.T
+        embedding = rearrange([torch.cos(2*np.pi*y), torch.sin(2*np.pi*y)], 'two ... f -> ... (two f)')
+        return embedding
+
+
 class Transformer(L.LightningModule):
     def __init__(self, in_dim, out_dim, args):
         super().__init__()
@@ -27,7 +49,8 @@ class Transformer(L.LightningModule):
         self.nhead = args.nhead
         assert args.d_model % self.nhead == 0, "d_model must be divisible by nhead"
 
-        self.embedding = nn.Linear(in_dim, args.d_model)
+        # self.embedding = nn.Linear(in_dim, args.d_model)
+        self.embedding = RFF(in_dim, args.d_model, args.rff_scale)
         encoder_layer = nn.TransformerEncoderLayer(d_model=args.d_model, nhead=self.nhead, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=3)
         self.projection = nn.Linear(args.d_model, out_dim)
@@ -56,34 +79,57 @@ class Transformer(L.LightningModule):
         optimizer = optim.Adam(self.parameters(), lr=self.args.lr)
         return optimizer
 
-VAL_FILENAMES = [
-    '05UE20200706',
-    '15EQ20200329',
-    '05EQ20200525',
-    '15UE20191206',
-    '15UE20191213',
-    '01EQ20200706',
-    '15EQ20191209',
-    '10UE20200331',
-    '10EQ20200831',
-    '01UE20200917_2',
-    '01EQ20201007_2',
-    '05UE20200708',
-    '01UE20200918',
-    '05EQ20200303_reencoded',
-    '30UE20191206',
-    '10EQ20200822',
-    '30EQ20191209',
-    '10UE20200624',
-]
+def get_train_val_filenames():
+    # val_filenames = [
+    #     '05UE20200706',
+    #     '15EQ20200329',
+    #     '05EQ20200525',
+    #     '15UE20191206',
+    #     '15UE20191213',
+    #     '01EQ20200706',
+    #     '15EQ20191209',
+    #     '10UE20200331',
+    #     '10EQ20200831',
+    #     '01UE20200917_2',
+    #     '01EQ20201007_2',
+    #     '05UE20200708',
+    #     '01UE20200918',
+    #     '05EQ20200303_reencoded',
+    #     '30UE20191206',
+    #     '10EQ20200822',
+    #     '30EQ20191209',
+    #     '10UE20200624',
+    # ]
 
-# TRAIN_FILENAMES = [
-    # '30EQ20191203'
-    # '05EQ20200813'
-# ]
+    train_filenames = [
+        # '30EQ20191203'
+        # '05EQ20200813',
+        '01EQ20200706',
+    ]
+    val_filenames = train_filenames
 
-# for f in VAL_FILENAMES:
-    # assert f not in TRAIN_FILENAMES, f"{f} is in both val and train"
+    # train_filenames = []
+    # for filename in os.listdir("Locusts/Data/Tracking"):
+    #     if filename.endswith(".mat"):
+    #         # convert e.g. 15UE20200509_annotation.mat to 15UE20200509
+    #         # to do so, get rid of '_annotation.mat' at the end
+    #         f = filename[:-len('_annotation.mat')]
+    #         if f not in val_filenames:
+    #             train_filenames.append(f)
+
+
+    # def get_n(filename):
+        # return int(filename[:2])
+
+    # n = 5
+    # remove all filenames that aren't n=n
+    # val_filenames = [f for f in val_filenames if get_n(f) == n]
+    # train_filenames = [f for f in train_filenames if get_n(f) == n]
+
+    # for f in val_filenames:
+        # assert f not in train_filenames, f"{f} is in both val and train"
+
+    return train_filenames, val_filenames
 
 def get_acceleration(prediction):
     '''
@@ -94,29 +140,22 @@ def get_acceleration(prediction):
     # the first two rows are the food particles
     return prediction[..., 2:N+2, :]
 
-def make_dataloaders(args, n=None):
+def make_dataloaders(train_filenames, val_filenames):
     print('Loading data...')
-    data = {}
-    # for each file in Locusts/Data/Tracking, import the data
-    for filename in os.listdir("Locusts/Data/Tracking"):
-        if filename.endswith(".mat"):
-            file_n = int(filename[:2])
-            if n is not None and file_n != n:
-                continue
+    train_data = {}
+    val_data = {}
+    max_n = 0
 
-            # convert e.g. 15UE20200509_annotation.mat to 15UE20200509
-            # to do so, get rid of '_annotation.mat' at the end
-            f = filename[:-len('_annotation.mat')]
+    for f in train_filenames:
+        arr, info = locusts.import_data(f)
+        train_data[f] = arr, info
+        max_n = max(max_n, info['n'])
 
-            arr, info = locusts.import_data(f)
-            data[f] = arr, info
+    for f in val_filenames:
+        arr, info = locusts.import_data(f)
+        val_data[f] = arr, info
+        max_n = max(max_n, info['n'])
 
-    train_filenames = [k for k in data.keys() if k not in VAL_FILENAMES]
-    val_filenames = [k for k in data.keys() if k in VAL_FILENAMES]
-    train_data = {k:v for k,v in data.items() if k in train_filenames}
-    val_data = {k:v for k,v in data.items() if k in val_filenames}
-
-    max_n = max([info['n'] for (_, info) in data.values()])
     # input data is (T, N, D)
     # we add food particles to make N+2
     # we also add (1) a binary is_food indicator,
@@ -140,7 +179,7 @@ def make_dataloaders(args, n=None):
         data[:, 1, D+2] = info['radB']
 
         # make acceleration targets
-        # x = arr
+        x = arr
         v = (1/locusts.DT) * (arr[1:] - arr[:-1])
         a = (1/locusts.DT) * (v[1:] - v[:-1])
         # pad acceleration targets.
@@ -149,17 +188,26 @@ def make_dataloaders(args, n=None):
         # data and acc need to be the same length
         data = data[:-2]
 
+        # instead, have the targets be the next timestep's position
+        # next_pos = np.zeros((T-1, max_n+2, D))
+        # next_pos[:, :N, :] = arr[1:]
+        # data = data[:-1]
+
         # T, N, d
         data = torch.tensor(data, dtype=torch.float32)
+        # next_pos = torch.tensor(next_pos, dtype=torch.float32)
         acc = torch.tensor(acc, dtype=torch.float32)
+
 
         # scale the acceleration targets so that the prediction task is in a typical range
         acc_scale = 1e4
         acc = acc * acc_scale
 
-        assert_equal(data.shape, (T-2, max_n+2, IN_DIM))
+        assert_equal(data.shape, (T-1, max_n+2, IN_DIM))
+        # assert_equal(next_pos.shape, (T-1, max_n+2, OUT_DIM))
         assert_equal(acc.shape, (T-2, max_n+2, OUT_DIM))
 
+        # return data, next_pos
         return data, acc
 
     # def embed_timestep(arr):
@@ -180,7 +228,6 @@ def make_dataloaders(args, n=None):
     # for (arr, info) in data.values():
         # assert_equal(embed_timestep(arr[0]), process_data(arr, info)[0][0][:info['n']+2])
     # assert False
-
 
     def make_dataset(data):
         inputs, targets = zip(*[process_data(arr, info) for (arr, info) in data.values()])
@@ -205,6 +252,7 @@ def make_dataloaders(args, n=None):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--slurm_id", default=None, type=int)
+parser.add_argument("--slurm_name", default=None, type=str)
 parser.add_argument("--no_log", action='store_true')
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--d_model", type=int, default=64)
@@ -213,6 +261,7 @@ parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--note", type=str, default='')
 # parser.add_argument("--steps", type=float, default=None)
 parser.add_argument("--epochs", type=int, default=100)
+parser.add_argument("--rff_scale", type=float, default=1)
 # parser.add_argument("--val_check_interval", type=float, default=0.2)
 args = parser.parse_args()
 
@@ -223,16 +272,14 @@ if __name__ == '__main__':
 
     model = Transformer(IN_DIM, OUT_DIM, args)
 
-    n = 5
-    train_dataloader, val_dataloader, info = make_dataloaders(args)
+    train_filenames, val_filenames = get_train_val_filenames()
+    train_dataloader, val_dataloader, dataset_info = make_dataloaders(train_filenames, val_filenames)
     # save dataloaders to a pickle for faster loading later
     # with open(f'dataloaders.pkl', 'wb') as f:
-        # pickle.dump((train_dataloader, val_dataloader, info), f)
+        # pickle.dump((train_dataloader, val_dataloader, dataset_info), f)
     # assert False
 
-    train_dataloader, val_dataloader, dataset_info = pickle.load(open(f'dataloaders_n=5.pkl', 'rb'))
-    print(f'{dataset_info=}')
-    assert False
+    # train_dataloader, val_dataloader, dataset_info = pickle.load(open(f'dataloaders_n=5.pkl', 'rb'))
 
     logger = WandbLogger(project='locust_transformer', mode='disabled' if args.no_log else 'online')
     logger.log_hyperparams(args)

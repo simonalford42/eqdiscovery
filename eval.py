@@ -9,10 +9,11 @@ import numpy as np
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def predict(model, init_pos, info, t=1):
+def predict(model, init_pos, info, t=1, model_predicts_acceleration=False):
     '''
     input:
         init_pos: [T, N, D]  - can be multiple timesteps because we need at least two timesteps to calculate initial velocity, and might as well handle more than that too
+        model_predicts_acceleration: if True, model predicts acceleration, otherwise model predicts position
     returns:
         x: [T+t, N, D]
         v: [T+t-1, N, D]
@@ -50,16 +51,22 @@ def predict(model, init_pos, info, t=1):
         inp = inp
         pred = model(inp)[0]
         new_a = train_locusts.get_acceleration(pred)
-        acc_scale = 1e4
-        new_a = new_a / acc_scale
         new_v = v[-1] + locusts.DT * new_a
         new_x = x[-1] + locusts.DT * new_v
+        if model_predicts_acceleration:
+            new_a = train_locusts.get_acceleration(pred)
+            acc_scale = 1e4
+            new_a = new_a / acc_scale
+            new_v = v[-1] + locusts.DT * new_a
+            new_x = x[-1] + locusts.DT * new_v
+            a.append(new_a) # a_i
+            v.append(new_v) # v_i+1 = v_i + a_i * dt
+        else:
+            new_x = pred
 
-        a.append(new_a) # a_i
-        v.append(new_v) # v_i+1 = v_i + a_i * dt
         x.append(new_x) # x_i+2 = x_i+1 + v_i+1 * dt
 
-    return torch.stack(x).cpu(), torch.stack(v).cpu(), torch.stack(a).cpu()
+    return torch.stack(x).cpu()
 
 
 def get_ckpt_path(run_path):
