@@ -118,8 +118,8 @@ def visualize_data(data, info=None, speedup=1):
 
     maxv = 1
     minv = -1
-    assert np.min(data) >= minv, print(np.min(data), minv)
-    assert np.max(data) <= maxv, print(np.max(data), maxv)
+    # assert np.min(data) >= minv, print(np.min(data), minv)
+    # assert np.max(data) <= maxv, print(np.max(data), maxv)
     # minx, maxx = np.min(data[:, :, 0]), np.max(data[:, :, 0])
     # miny, maxy = np.min(data[:, :, 1]), np.max(data[:, :, 1])
 
@@ -170,7 +170,9 @@ def visualize_data(data, info=None, speedup=1):
 
         # draw the dots moving around
         for i in range(data.shape[1]):
-            pygame.draw.circle(screen, (255, 255, 255), translate(data[t, i]), 2)
+            x, y = data[t, i]
+            if minv < x < maxv and minv < y < maxv:
+                pygame.draw.circle(screen, (255, 255, 255), translate(data[t, i]), 2)
 
         # draw the dot moving around in a circle too
         # pygame.draw.circle(screen, (255, 255, 255), circle_pos(t), 2)
