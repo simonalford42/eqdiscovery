@@ -39,26 +39,27 @@ class RFF(nn.Module):
 
 
 class Transformer(L.LightningModule):
-    def __init__(self, in_dim, out_dim, args):
+    def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters()
-        self.args = args
-        self.in_dim = in_dim
-        self.d_model = args.d_model
-        self.out_dim = out_dim
-        self.nhead = args.nhead
-        assert args.d_model % self.nhead == 0, "d_model must be divisible by nhead"
+        self.hparams.update(hparams)
+        self.in_dim = hparams['in_dim']
+        self.d_model = hparams['d_model']
+        self.out_dim = hparams['out_dim']
+        self.nhead = hparams['nhead']
+        assert self.d_model % self.nhead == 0, "d_model must be divisible by nhead"
 
-        # self.embedding = nn.Linear(in_dim, args.d_model)
-        self.embedding = RFF(in_dim, args.d_model, args.rff_scale)
-        encoder_layer = nn.TransformerEncoderLayer(d_model=args.d_model, nhead=self.nhead, batch_first=True)
+        # self.embedding = nn.Linear(self.in_dim, self..d_model)
+        self.embedding = RFF(self.in_dim, self.d_model, hparams['rff_scale'])
+        encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_model, nhead=self.nhead, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=3)
-        self.projection = nn.Linear(args.d_model, out_dim)
+        self.projection = nn.Linear(self.d_model, self.out_dim)
 
     def forward(self, x):
         x = self.embedding(x)
         x = self.transformer(x)
         x = self.projection(x)
+        # return torch.zeros_like(x) * x
         return x
 
     def training_step(self, batch, batch_idx):
@@ -76,7 +77,7 @@ class Transformer(L.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=self.args.lr)
+        optimizer = optim.Adam(self.parameters(), lr=self.hparams['lr'])
         return optimizer
 
 def get_train_val_filenames():
@@ -179,36 +180,36 @@ def make_dataloaders(train_filenames, val_filenames):
         data[:, 1, D+2] = info['radB']
 
         # make acceleration targets
-        x = arr
-        v = (1/locusts.DT) * (arr[1:] - arr[:-1])
-        a = (1/locusts.DT) * (v[1:] - v[:-1])
+        # x = arr
+        # v = (1/locusts.DT) * (arr[1:] - arr[:-1])
+        # a = (1/locusts.DT) * (v[1:] - v[:-1])
         # pad acceleration targets.
-        acc = np.zeros((T-2, max_n+2, D))
-        acc[:, 2:N+2, :] = a
+        # acc = np.zeros((T-2, max_n+2, D))
+        # acc[:, 2:N+2, :] = a
         # data and acc need to be the same length
-        data = data[:-2]
+        # data = data[:-2]
+        # acc = torch.tensor(acc, dtype=torch.float32)
 
         # instead, have the targets be the next timestep's position
-        # next_pos = np.zeros((T-1, max_n+2, D))
-        # next_pos[:, :N, :] = arr[1:]
-        # data = data[:-1]
+        next_pos = np.zeros((T-1, max_n+2, D))
+        next_pos[:, :N, :] = arr[1:]
+        data = data[:-1]
+        next_pos = torch.tensor(next_pos, dtype=torch.float32)
 
         # T, N, d
         data = torch.tensor(data, dtype=torch.float32)
-        # next_pos = torch.tensor(next_pos, dtype=torch.float32)
-        acc = torch.tensor(acc, dtype=torch.float32)
-
-
-        # scale the acceleration targets so that the prediction task is in a typical range
-        acc_scale = 1e4
-        acc = acc * acc_scale
 
         assert_equal(data.shape, (T-1, max_n+2, IN_DIM))
-        # assert_equal(next_pos.shape, (T-1, max_n+2, OUT_DIM))
-        assert_equal(acc.shape, (T-2, max_n+2, OUT_DIM))
+        assert_equal(next_pos.shape, (T-1, max_n+2, OUT_DIM))
 
-        # return data, next_pos
-        return data, acc
+        # scale the acceleration targets so that the prediction task is in a typical range
+        # acc_scale = 1e4
+        # acc = acc * acc_scale
+        # assert_equal(data.shape, (T-2, max_n+2, IN_DIM))
+        # assert_equal(acc.shape, (T-2, max_n+2, OUT_DIM))
+
+        return data, next_pos
+        # return data, acc
 
     # def embed_timestep(arr):
         # N, D = arr.shape
@@ -243,11 +244,7 @@ def make_dataloaders(train_filenames, val_filenames):
     train_dataloader = DataLoader(train_dataset, batch_size=2048, shuffle=True, num_workers=7)
     val_dataloader = DataLoader(val_dataset, batch_size=2048, shuffle=False, num_workers=7)
 
-    info['train_filenames'] = train_filenames
-    info['val_filenames'] = val_filenames
-    print('Finished loading data')
-
-    return train_dataloader, val_dataloader, info
+    return train_dataloader, val_dataloader
 
 
 parser = argparse.ArgumentParser()
@@ -257,7 +254,7 @@ parser.add_argument("--no_log", action='store_true')
 parser.add_argument("--seed", type=int, default=None)
 parser.add_argument("--d_model", type=int, default=64)
 parser.add_argument("--nhead", type=int, default=4)
-parser.add_argument("--lr", type=float, default=1e-3)
+parser.add_argument("--lr", type=float, default=1e-4)
 parser.add_argument("--note", type=str, default='')
 # parser.add_argument("--steps", type=float, default=None)
 parser.add_argument("--epochs", type=int, default=100)
@@ -270,20 +267,27 @@ if __name__ == '__main__':
     if args.seed is not None:
         seed_everything(args.seed)
 
-    model = Transformer(IN_DIM, OUT_DIM, args)
+    hparams = vars(args)
+    hparams['in_dim'] = IN_DIM
+    hparams['out_dim'] = OUT_DIM
 
     train_filenames, val_filenames = get_train_val_filenames()
-    train_dataloader, val_dataloader, dataset_info = make_dataloaders(train_filenames, val_filenames)
+    train_dataloader, val_dataloader = make_dataloaders(train_filenames, val_filenames)
+
     # save dataloaders to a pickle for faster loading later
     # with open(f'dataloaders.pkl', 'wb') as f:
-        # pickle.dump((train_dataloader, val_dataloader, dataset_info), f)
+        # pickle.dump((train_dataloader, val_dataloader, train_filenames, val_filenames), f)
     # assert False
 
-    # train_dataloader, val_dataloader, dataset_info = pickle.load(open(f'dataloaders_n=5.pkl', 'rb'))
+    # train_dataloader, val_dataloader, train_filenames, val_filenames = pickle.load(open(f'dataloaders_n=5.pkl', 'rb'))
+
+    hparams['train_filenames'] = train_filenames
+    hparams['val_filenames'] = val_filenames
+
+    model = Transformer(hparams)
 
     logger = WandbLogger(project='locust_transformer', mode='disabled' if args.no_log else 'online')
-    logger.log_hyperparams(args)
-    logger.log_hyperparams(dataset_info)
+    logger.log_hyperparams(hparams)
     trainer = Trainer(
         # max_steps=args.steps,
         max_epochs=args.epochs,
@@ -292,5 +296,4 @@ if __name__ == '__main__':
         # val_check_interval=args.val_check_interval,
     )
 
-    # trainer.validate(model=model, dataloaders=val_dataloader)
     trainer.fit(model=model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)

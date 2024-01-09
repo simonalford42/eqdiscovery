@@ -6,6 +6,7 @@ import torch
 from utils import assert_equal
 from einops import rearrange
 import numpy as np
+import subprocess
 
 def predict(model, init_pos, info, t=1, model_predicts_acceleration=False):
     '''
@@ -68,15 +69,8 @@ def get_ckpt_path(run_path):
     return ckpts[0]
 
 
-def copy_ckpt(path):
-    # move file at path to ~/to_copy/ by doing mv path ~/to_copy/
-    import subprocess
-    subprocess.run(['mv', path, '~/to_copy/model.ckpt'])
-
-
-
-path = get_ckpt_path('simonalford42/locust_transformer/p01izwoi')
-copy_ckpt(path)
+path = get_ckpt_path('simonalford42/locust_transformer/u5jkm5jw')
+subprocess.run(['mv', path, '~/to_copy/model_pos.ckpt'])
 assert False
 
 model = Transformer.load_from_checkpoint(path)
